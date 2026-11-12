@@ -82,12 +82,12 @@ st.markdown(
 
 # --- SISTEMA DE LOGIN ---
 if not st.session_state.logged_in:
-  st.title("🍲 Controlo de Estoque & Expedição - Alimentar")
+  st.title("Controle de Estoque & Expedição")
   st.markdown("Insira as suas credenciais para aceder ao armazém.")
-  user_input = st.text_input("Utilizador")
+  user_input = st.text_input("Usuário")
   pass_input = st.text_input("Senha", type="password")
 
-  if st.button("Entrar no Sistema"):
+  if st.button("Entrar"):
     if (
         user_input in st.session_state.users
         and st.session_state.users[user_input]["senha"] == pass_input
@@ -116,7 +116,7 @@ if num_novas > 0:
   st.sidebar.warning(f"🔔 Tem {num_novas} nova(s) mensagem(ns)!")
 
 opcoes_menu = [
-    "🍲 Consultar Stock & Setores",
+    "🍲 Consultar Estoque & Setores",
     "➕ Entradas / Saídas (Expedição)",
     "📋 Gestão de Pedidos & Check-list",
     f"💬 Mensagens Internas ({num_novas})",
