@@ -1,4 +1,7 @@
 import datetime
+import io
+import os
+import zipfile
 import pandas as pd
 import streamlit as st
 
@@ -8,6 +11,36 @@ st.set_page_config(
     page_icon="🍲",
     layout="wide",
 )
+
+# --- PERSISTÊNCIA E CARREGAMENTO SEGURO DO STOCK ---
+ARQUIVO_ESTOQUE = "estoque_dados.csv"
+
+if "estoque" not in st.session_state:
+  if os.path.exists(ARQUIVO_ESTOQUE):
+    st.session_state.estoque = pd.read_csv(ARQUIVO_ESTOQUE)
+  else:
+    st.session_state.estoque = pd.DataFrame({
+        "Codigo_Barras": ["789101", "789102", "789103"],
+        "Produto": [
+            "Molho de Tomate (Lote A)",
+            "Farinha de Trigo (Kg)",
+            "Óleo de Soja (L)",
+        ],
+        "Descricao": [
+            "Molho tradicional sachê",
+            "Farinha tipo 1 refinada",
+            "Óleo vegetal de soja",
+        ],
+        "Unidades_Embalagem": [12, 10, 20],
+        "Tipo_Item": ["Matéria-Prima", "Matéria-Prima", "Insumo"],
+        "Setor": ["Secos e Molhados", "Secos e Molhados", "Câmara Fria"],
+        "Quantidade": [4, 30, 2],
+        "Limite_Minimo": [10, 25, 5],
+        "Validade": ["2026-11-15", "2027-05-20", "2026-11-10"],
+        "Ultima_Modificacao": ["2026-11-01", "2026-11-05", "2026-11-10"],
+        "Modificado_Por": ["admin", "operador", "admin"],
+    })
+    st.session_state.estoque.to_csv(ARQUIVO_ESTOQUE, index=False)
 
 # --- INICIALIZAÇÃO DO ESTADO DA SESSÃO ---
 if "users" not in st.session_state:
@@ -46,12 +79,10 @@ if "historico" not in st.session_state:
   )
 
 if "mensagens" not in st.session_state:
-  st.session_state.mensagens = (
-      []
-  )  # {de, para, texto, ficheiro_nome, ficheiro_bytes, data, lida}
+  st.session_state.mensagens = []
 
 if "agenda_eventos" not in st.session_state:
-  st.session_state.agenda_eventos = []  # {data, evento}
+  st.session_state.agenda_eventos = []
 
 if "setores" not in st.session_state:
   st.session_state.setores = [
@@ -62,29 +93,6 @@ if "setores" not in st.session_state:
 
 if "pedidos_ativos" not in st.session_state:
   st.session_state.pedidos_ativos = {}
-
-if "estoque" not in st.session_state:
-  st.session_state.estoque = pd.DataFrame({
-      "Codigo_Barras": ["789101", "789102", "789103"],
-      "Produto": [
-          "Molho de Tomate (Lote A)",
-          "Farinha de Trigo (Kg)",
-          "Óleo de Soja (L)",
-      ],
-      "Descricao": [
-          "Molho tradicional sachê",
-          "Farinha tipo 1 refinada",
-          "Óleo vegetal de soja",
-      ],
-      "Unidades_Embalagem": [12, 10, 20],
-      "Tipo_Item": ["Matéria-Prima", "Matéria-Prima", "Insumo"],
-      "Setor": ["Secos e Molhados", "Secos e Molhados", "Câmara Fria"],
-      "Quantidade": [4, 30, 2],
-      "Limite_Minimo": [10, 25, 5],
-      "Validade": ["2026-11-15", "2027-05-20", "2026-11-10"],
-      "Ultima_Modificacao": ["2026-11-01", "2026-11-05", "2026-11-10"],
-      "Modificado_Por": ["admin", "operador", "admin"],
-  })
 
 # Aplicar estilo visual dinâmico
 cfg = st.session_state.config_visual
@@ -168,14 +176,15 @@ if st.sidebar.button("Terminar Sessão"):
 
 df = st.session_state.estoque
 
-# --- 1. PAINEL DO ADMINISTRADOR (Utilizadores, Setores, Limitações, Agenda & Visual) ---
+# --- 1. PAINEL DO ADMINISTRADOR (Utilizadores, Setores, Limitações, Agenda, Backup & Visual) ---
 if menu == "⚙️ Painel do Administrador & Agenda":
   st.header("⚙️ Painel de Controlo do Administrador")
 
-  tab_adm1, tab_adm2, tab_adm3, tab_adm4 = st.tabs([
+  tab_adm1, tab_adm2, tab_adm3, tab_adm4, tab_adm5 = st.tabs([
       "👥 Utilizadores & Permissões",
       "🏢 Setores",
       "📅 Calendário & Agenda",
+      "💾 Backup & Restauração",
       "🎨 Visual & Eliminação",
   ])
 
@@ -190,32 +199,32 @@ if menu == "⚙️ Painel do Administrador & Agenda":
     pode_exc = st.checkbox("Pode Excluir Itens", value=False)
     pode_mov = st.checkbox("Pode Registar Entradas/Saídas", value=True)
 
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-      if st.button("Guardar / Registar Utilizador"):
-        if novo_user and nova_senha:
-          st.session_state.users[novo_user] = {
-              "senha": nova_senha,
-              "perfil": novo_perfil,
-              "pode_cadastrar": pode_cad,
-              "pode_excluir": pode_exc,
-              "pode_movimentar": pode_mov,
-          }
-          st.success(f"Utilizador '{novo_user}' guardado com sucesso!")
-        else:
-          st.error("Preencha o nome e a senha.")
+    if st.button("Guardar / Registar Utilizador"):
+      if novo_user and nova_senha:
+        st.session_state.users[novo_user] = {
+            "senha": nova_senha,
+            "perfil": novo_perfil,
+            "pode_cadastrar": pode_cad,
+            "pode_excluir": pode_exc,
+            "pode_movimentar": pode_mov,
+        }
+        st.success(f"Utilizador '{novo_user}' guardado com sucesso!")
+      else:
+        st.error("Preencha o nome e a senha.")
 
     st.divider()
     st.subheader("Utilizadores Atuais & Eliminação")
     for u, dados in list(st.session_state.users.items()):
       c1, c2 = st.columns([3, 1])
       with c1:
+        pode_c = dados.get("pode_cadastrar", True)
+        pode_e = dados.get("pode_excluir", False)
         st.write(
-            f"- **{u}** ({dados['perfil']}) | Cadastrar: {dados['pode_cadastrar']}"
-            f" | Excluir: {dados['pode_excluir']}"
+            f"- **{u}** ({dados.get('perfil', 'Operador')}) | Cadastrar: {pode_c}"
+            f" | Excluir: {pode_e}"
         )
       with c2:
-        if u != "admin":  # Evitar apagar o admin principal
+        if u != "admin":
           if st.button(f"Excluir #{u}", key=f"del_user_{u}"):
             del st.session_state.users[u]
             st.success(f"Utilizador {u} eliminado!")
@@ -275,6 +284,58 @@ if menu == "⚙️ Painel do Administrador & Agenda":
         st.write(f"📅 **{ev['data']}**: {ev['evento']}")
 
   with tab_adm4:
+    st.subheader("💾 Gestão de Backup e Restauração do Sistema")
+    col_bk1, col_bk2 = st.columns(2)
+
+    with col_bk1:
+      st.markdown("### 📤 Exportar Backup")
+      st.caption("Gera um ficheiro ZIP com todos os dados atuais do stock.")
+
+      zip_buffer = io.BytesIO()
+      with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        if "estoque" in st.session_state:
+          csv_estoque = st.session_state.estoque.to_csv(index=False)
+          zip_file.writestr("estoque_dados.csv", csv_estoque)
+        if "historico" in st.session_state:
+          csv_hist = st.session_state.historico.to_csv(index=False)
+          zip_file.writestr("historico_auditoria.csv", csv_hist)
+
+      zip_buffer.seek(0)
+      data_atual_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M")
+
+      st.download_button(
+          label="📥 Descarregar Backup Completo (.zip)",
+          data=zip_buffer,
+          file_name=f"backup_sistema_cemv_{data_atual_str}.zip",
+          mime="application/zip",
+      )
+
+    with col_bk2:
+      st.markdown("### 📥 Restaurar Configuração")
+      st.caption("Carregue um ficheiro de backup anterior (.zip).")
+
+      arquivo_backup = st.file_uploader(
+          "Selecionar Ficheiro de Backup (.zip)", type=["zip"]
+      )
+
+      if arquivo_backup is not None:
+        if st.button("⚠️ Confirmar Restauração do Sistema"):
+          try:
+            with zipfile.ZipFile(arquivo_backup, "r") as zip_ref:
+              if "estoque_dados.csv" in zip_ref.namelist():
+                with zip_ref.open("estoque_dados.csv") as f:
+                  st.session_state.estoque = pd.read_csv(f)
+                  st.session_state.estoque.to_csv(ARQUIVO_ESTOQUE, index=False)
+              if "historico_auditoria.csv" in zip_ref.namelist():
+                with zip_ref.open("historico_auditoria.csv") as f:
+                  st.session_state.historico = pd.read_csv(f)
+
+            st.success("✨ Sistema restaurado com sucesso!")
+            st.rerun()
+          except Exception as e:
+            st.error(f"Erro ao processar o ficheiro de backup: {e}")
+
+  with tab_adm5:
     st.subheader("🎨 Personalização Visual do Sistema")
     tamanho_escolhido = st.selectbox(
         "Tamanho da Fonte", ["14px", "16px", "18px"], index=1
@@ -318,6 +379,7 @@ if menu == "⚙️ Painel do Administrador & Agenda":
           [st.session_state.historico, nova_hist], ignore_index=True
       )
       st.session_state.estoque = df.drop(idx_excluir).reset_index(drop=True)
+      st.session_state.estoque.to_csv(ARQUIVO_ESTOQUE, index=False)
       st.success(
           f"O produto '{produto_a_excluir}' foi eliminado do stock com sucesso!"
       )
@@ -374,7 +436,6 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
         " stock."
     )
   else:
-    # Opção de cadastrar item novo detalhado
     if permissoes_atuais["pode_cadastrar"]:
       cadastrar_novo = st.checkbox(
           "➕ O produto não existe? Cadastrar novo item manualmente"
@@ -418,6 +479,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
             st.session_state.estoque = pd.concat(
                 [st.session_state.estoque, nova_linha], ignore_index=True
             )
+            st.session_state.estoque.to_csv(ARQUIVO_ESTOQUE, index=False)
             st.success(
                 f"Produto '{novo_prod_nome}' cadastrado com sucesso!"
             )
@@ -483,6 +545,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
 
         df.loc[idx, "Ultima_Modificacao"] = data_atual
         df.loc[idx, "Modificado_Por"] = st.session_state.username
+        st.session_state.estoque.to_csv(ARQUIVO_ESTOQUE, index=False)
 
         nova_hist = pd.DataFrame(
             [[
@@ -647,6 +710,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
 
               if not erro_baixa:
                 dados_p["concluido"] = True
+                st.session_state.estoque.to_csv(ARQUIVO_ESTOQUE, index=False)
                 st.success(
                     "Baixa automática realizada com sucesso no stock!"
                 )
