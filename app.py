@@ -12,8 +12,20 @@ st.set_page_config(
 # --- INICIALIZAÇÃO DO ESTADO DA SESSÃO ---
 if "users" not in st.session_state:
   st.session_state.users = {
-      "admin": {"senha": "1234", "perfil": "Administrador"},
-      "operador": {"senha": "abcd", "perfil": "Operador"},
+      "admin": {
+          "senha": "1234",
+          "perfil": "Administrador",
+          "pode_cadastrar": True,
+          "pode_excluir": True,
+          "pode_movimentar": True,
+      },
+      "operador": {
+          "senha": "abcd",
+          "perfil": "Operador",
+          "pode_cadastrar": False,
+          "pode_excluir": False,
+          "pode_movimentar": True,
+      },
   }
 
 if "logged_in" not in st.session_state:
@@ -34,7 +46,12 @@ if "historico" not in st.session_state:
   )
 
 if "mensagens" not in st.session_state:
-  st.session_state.mensagens = []
+  st.session_state.mensagens = (
+      []
+  )  # {de, para, texto, ficheiro_nome, ficheiro_bytes, data, lida}
+
+if "agenda_eventos" not in st.session_state:
+  st.session_state.agenda_eventos = []  # {data, evento}
 
 if "setores" not in st.session_state:
   st.session_state.setores = [
@@ -54,8 +71,14 @@ if "estoque" not in st.session_state:
           "Farinha de Trigo (Kg)",
           "Óleo de Soja (L)",
       ],
+      "Descricao": [
+          "Molho tradicional sachê",
+          "Farinha tipo 1 refinada",
+          "Óleo vegetal de soja",
+      ],
+      "Unidades_Embalagem": [12, 10, 20],
+      "Tipo_Item": ["Matéria-Prima", "Matéria-Prima", "Insumo"],
       "Setor": ["Secos e Molhados", "Secos e Molhados", "Câmara Fria"],
-      "Categoria": ["Matéria-Prima", "Matéria-Prima", "Insumo"],
       "Quantidade": [4, 30, 2],
       "Limite_Minimo": [10, 25, 5],
       "Validade": ["2026-11-15", "2027-05-20", "2026-11-10"],
@@ -82,12 +105,12 @@ st.markdown(
 
 # --- SISTEMA DE LOGIN ---
 if not st.session_state.logged_in:
-  st.title("Controle de Estoque & Expedição")
+  st.title("🍲 Controlo de Estoque & Expedição - Alimentar")
   st.markdown("Insira as suas credenciais para aceder ao armazém.")
-  user_input = st.text_input("Usuário")
+  user_input = st.text_input("Utilizador")
   pass_input = st.text_input("Senha", type="password")
 
-  if st.button("Entrar"):
+  if st.button("Entrar no Sistema"):
     if (
         user_input in st.session_state.users
         and st.session_state.users[user_input]["senha"] == pass_input
@@ -100,6 +123,16 @@ if not st.session_state.logged_in:
     else:
       st.error("Utilizador ou senha incorretos.")
   st.stop()
+
+# --- VERIFICAÇÃO DE PERMISSÕES DO UTILIZADOR ATUAL ---
+permissoes_atuais = st.session_state.users.get(
+    st.session_state.username,
+    {
+        "pode_cadastrar": True,
+        "pode_excluir": True,
+        "pode_movimentar": True,
+    },
+)
 
 # --- BARRA LATERAL (MENU E PERFIL) ---
 st.sidebar.title(f"👤 {st.session_state.username}")
@@ -116,16 +149,16 @@ if num_novas > 0:
   st.sidebar.warning(f"🔔 Tem {num_novas} nova(s) mensagem(ns)!")
 
 opcoes_menu = [
-    "🍲 Consultar Estoque & Setores",
+    "🍲 Consultar Stock & Setores",
     "➕ Entradas / Saídas (Expedição)",
     "📋 Gestão de Pedidos & Check-list",
-    f"💬 Mensagens Internas ({num_novas})",
+    f"💬 Mensagens & Ficheiros ({num_novas})",
     "📊 Romaneios & Relatórios",
     "📜 Histórico de Auditoria",
 ]
 
 if st.session_state.perfil == "Administrador":
-  opcoes_menu.insert(1, "⚙️ Painel do Administrador")
+  opcoes_menu.insert(1, "⚙️ Painel do Administrador & Agenda")
 
 menu = st.sidebar.selectbox("Navegação do Armazém", opcoes_menu)
 
@@ -135,93 +168,160 @@ if st.sidebar.button("Terminar Sessão"):
 
 df = st.session_state.estoque
 
-# --- 1. PAINEL DO ADMINISTRADOR (Utilizadores, Setores & Visual) ---
-if menu == "⚙️ Painel do Administrador":
+# --- 1. PAINEL DO ADMINISTRADOR (Utilizadores, Setores, Limitações, Agenda & Visual) ---
+if menu == "⚙️ Painel do Administrador & Agenda":
   st.header("⚙️ Painel de Controlo do Administrador")
 
-  col_adm1, col_adm2 = st.columns(2)
+  tab_adm1, tab_adm2, tab_adm3, tab_adm4 = st.tabs([
+      "👥 Utilizadores & Permissões",
+      "🏢 Setores",
+      "📅 Calendário & Agenda",
+      "🎨 Visual & Eliminação",
+  ])
 
-  with col_adm1:
-    st.subheader("👥 Criar Novo Utilizador")
-    novo_user = st.text_input("Nome do Novo Utilizador")
-    nova_senha = st.text_input("Senha do Utilizador", type="password")
-    novo_perfil = st.selectbox("Perfil de Acesso", ["Operador", "Administrador"])
+  with tab_adm1:
+    st.subheader("Registar ou Modificar Utilizador")
+    novo_user = st.text_input("Nome do Utilizador")
+    nova_senha = st.text_input("Senha", type="password")
+    novo_perfil = st.selectbox("Perfil", ["Operador", "Administrador"])
 
-    if st.button("Registar Utilizador"):
-      if novo_user and nova_senha:
-        if novo_user in st.session_state.users:
-          st.error("Este utilizador já existe!")
-        else:
+    st.markdown("**Definir Limitações e Permissões:**")
+    pode_cad = st.checkbox("Pode Cadastrar Novos Itens", value=True)
+    pode_exc = st.checkbox("Pode Excluir Itens", value=False)
+    pode_mov = st.checkbox("Pode Registar Entradas/Saídas", value=True)
+
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+      if st.button("Guardar / Registar Utilizador"):
+        if novo_user and nova_senha:
           st.session_state.users[novo_user] = {
               "senha": nova_senha,
               "perfil": novo_perfil,
+              "pode_cadastrar": pode_cad,
+              "pode_excluir": pode_exc,
+              "pode_movimentar": pode_mov,
           }
-          st.success(f"Utilizador '{novo_user}' criado com sucesso!")
-      else:
-        st.error("Preencha todos os campos do utilizador.")
+          st.success(f"Utilizador '{novo_user}' guardado com sucesso!")
+        else:
+          st.error("Preencha o nome e a senha.")
 
     st.divider()
-    st.subheader("Utilizadores Atuais")
-    for u, dados in st.session_state.users.items():
-      st.write(f"- **{u}** ({dados['perfil']})")
+    st.subheader("Utilizadores Atuais & Eliminação")
+    for u, dados in list(st.session_state.users.items()):
+      c1, c2 = st.columns([3, 1])
+      with c1:
+        st.write(
+            f"- **{u}** ({dados['perfil']}) | Cadastrar: {dados['pode_cadastrar']}"
+            f" | Excluir: {dados['pode_excluir']}"
+        )
+      with c2:
+        if u != "admin":  # Evitar apagar o admin principal
+          if st.button(f"Excluir #{u}", key=f"del_user_{u}"):
+            del st.session_state.users[u]
+            st.success(f"Utilizador {u} eliminado!")
+            st.rerun()
 
-  with col_adm2:
-    st.subheader("🏢 Criar Novo Setor")
-    novo_setor = st.text_input("Nome do Setor (ex: Câmara de Congelados)")
+  with tab_adm2:
+    st.subheader("Gestão de Setores de Armazenamento")
+    novo_setor = st.text_input("Nome do Novo Setor (ex: Câmara de Congelados)")
 
     if st.button("Adicionar Setor"):
-      if novo_setor:
-        if novo_setor in st.session_state.setores:
-          st.error("Este setor já existe!")
-        else:
-          st.session_state.setores.append(novo_setor)
-          st.success(f"Setor '{novo_setor}' criado com sucesso!")
+      if novo_setor and novo_setor not in st.session_state.setores:
+        st.session_state.setores.append(novo_setor)
+        st.success(f"Setor '{novo_setor}' criado com sucesso!")
+        st.rerun()
       else:
-        st.error("Insira o nome do setor.")
+        st.error("Setor inválido ou já existente.")
 
     st.divider()
-    st.subheader("Setores Existentes")
-    for s in st.session_state.setores:
-      st.write(f"- 🏭 {s}")
+    st.subheader("Setores Existentes & Eliminação")
+    for s in list(st.session_state.setores):
+      c1, c2 = st.columns([3, 1])
+      with c1:
+        st.write(f"- 🏭 {s}")
+      with c2:
+        if len(st.session_state.setores) > 1:
+          if st.button(f"Excluir Setor", key=f"del_setor_{s}"):
+            st.session_state.setores.remove(s)
+            st.success(f"Setor {s} removido!")
+            st.rerun()
+        else:
+          st.caption("Mínimo 1 setor")
 
-  st.divider()
-  st.subheader("🎨 Personalização Visual do Sistema")
-  tamanho_escolhido = st.selectbox(
-      "Tamanho da Fonte", ["14px", "16px", "18px"], index=1
-  )
-  cor_texto_escolhida = st.color_picker("Cor Principal do Texto", cfg["cor_texto"])
-  cor_tabela_escolhida = st.color_picker(
-      "Cor de Fundo das Tabelas", cfg["cor_fundo_tabela"]
-  )
-
-  if st.button("Aplicar Personalização Visual"):
-    st.session_state.config_visual["tamanho_fonte"] = tamanho_escolhido
-    st.session_state.config_visual["cor_texto"] = cor_texto_escolhida
-    st.session_state.config_visual["cor_fundo_tabela"] = cor_tabela_escolhida
-    st.success("Estilo visual atualizado com sucesso!")
-    st.rerun()
-
-  st.divider()
-  st.subheader("🗑️ Eliminar Item do Stock")
-  produto_a_excluir = st.selectbox(
-      "Selecione o produto a remover permanentemente",
-      df["Produto"].tolist(),
-      key="excluir_prod",
-  )
-
-  if st.button("❌ Confirmar Eliminação do Produto"):
-    idx_excluir = df[df["Produto"] == produto_a_excluir].index[0]
-    data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    nova_hist = pd.DataFrame(
-        [[data_atual, st.session_state.username, "Eliminação de Produto", produto_a_excluir, 0]],
-        columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"],
+  with tab_adm3:
+    st.subheader("📅 Calendário Interativo & Agenda de Eventos do Armazém")
+    data_evento = st.date_input(
+        "Selecione a Data do Evento / Validade Especial"
     )
-    st.session_state.historico = pd.concat(
-        [st.session_state.historico, nova_hist], ignore_index=True
+    desc_evento = st.text_input(
+        "Descrição do Evento (ex: Recebimento de Lote Crítico, Insuflação, etc.)"
     )
-    st.session_state.estoque = df.drop(idx_excluir).reset_index(drop=True)
-    st.success(f"O produto '{produto_a_excluir}' foi eliminado do stock com sucesso!")
-    st.rerun()
+
+    if st.button("Adicionar Evento à Agenda"):
+      if desc_evento:
+        st.session_state.agenda_eventos.append(
+            {"data": str(data_evento), "evento": desc_evento}
+        )
+        st.success("Evento adicionado à agenda com sucesso!")
+      else:
+        st.error("Escreva a descrição do evento.")
+
+    st.divider()
+    st.subheader("📋 Eventos Agendados")
+    if not st.session_state.agenda_eventos:
+      st.info("Nenhum evento na agenda.")
+    else:
+      for ev in st.session_state.agenda_eventos:
+        st.write(f"📅 **{ev['data']}**: {ev['evento']}")
+
+  with tab_adm4:
+    st.subheader("🎨 Personalização Visual do Sistema")
+    tamanho_escolhido = st.selectbox(
+        "Tamanho da Fonte", ["14px", "16px", "18px"], index=1
+    )
+    cor_texto_escolhida = st.color_picker(
+        "Cor Principal do Texto", cfg["cor_texto"]
+    )
+    cor_tabela_escolhida = st.color_picker(
+        "Cor de Fundo das Tabelas", cfg["cor_fundo_tabela"]
+    )
+
+    if st.button("Aplicar Personalização Visual"):
+      st.session_state.config_visual["tamanho_fonte"] = tamanho_escolhido
+      st.session_state.config_visual["cor_texto"] = cor_texto_escolhida
+      st.session_state.config_visual["cor_fundo_tabela"] = cor_tabela_escolhida
+      st.success("Estilo visual atualizado!")
+      st.rerun()
+
+    st.divider()
+    st.subheader("🗑️ Eliminar Item do Stock")
+    produto_a_excluir = st.selectbox(
+        "Selecione o produto a remover permanentemente",
+        df["Produto"].tolist(),
+        key="excluir_prod",
+    )
+
+    if st.button("❌ Confirmar Eliminação do Produto"):
+      idx_excluir = df[df["Produto"] == produto_a_excluir].index[0]
+      data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+      nova_hist = pd.DataFrame(
+          [[
+              data_atual,
+              st.session_state.username,
+              "Eliminação de Produto",
+              produto_a_excluir,
+              0,
+          ]],
+          columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"],
+      )
+      st.session_state.historico = pd.concat(
+          [st.session_state.historico, nova_hist], ignore_index=True
+      )
+      st.session_state.estoque = df.drop(idx_excluir).reset_index(drop=True)
+      st.success(
+          f"O produto '{produto_a_excluir}' foi eliminado do stock com sucesso!"
+      )
+      st.rerun()
 
 
 # --- 2. CONSULTAR STOCK & SETORES ---
@@ -229,7 +329,8 @@ elif menu == "🍲 Consultar Stock & Setores":
   st.header("🍲 Consulta Geral de Stock e Visão por Setor")
 
   setor_filtro = st.selectbox(
-      "Filtrar por Setor de Armazenamento", ["Todos os Setores"] + st.session_state.setores
+      "Filtrar por Setor de Armazenamento",
+      ["Todos os Setores"] + st.session_state.setores,
   )
   pesquisa = st.text_input("🔍 Pesquisar por Alimento ou Código de Barras", "")
 
@@ -240,7 +341,9 @@ elif menu == "🍲 Consultar Stock & Setores":
   if pesquisa:
     df_filtrado = df_filtrado[
         df_filtrado["Produto"].str.contains(pesquisa, case=False, na=False)
-        | df_filtrado["Codigo_Barras"].str.contains(pesquisa, case=False, na=False)
+        | df_filtrado["Codigo_Barras"].str.contains(
+            pesquisa, case=False, na=False
+        )
     ]
 
 
@@ -255,106 +358,147 @@ elif menu == "🍲 Consultar Stock & Setores":
       df_filtrado.style.apply(destacar_estoque_e_validade, axis=1),
       use_container_width=True,
   )
-  st.info("🔴 Itens a **vermelho** indicam stock crítico ou validade vencida/próxima.")
+  st.info(
+      "🔴 Itens a **vermelho** indicam stock crítico ou validade"
+      " vencida/próxima."
+  )
 
 
-# --- 3. ENTRADAS E SAÍDAS (Com Cadastro Manual Direto) ---
+# --- 3. ENTRADAS E SAÍDAS (Com Cadastro Detalhado de Novos Itens) ---
 elif menu == "➕ Entradas / Saídas (Expedição)":
   st.header("➕ Registo de Recebimento ou Expedição de Alimentos")
 
-  # Opção de cadastrar item novo diretamente na tela de entradas
-  cadastrar_novo = st.checkbox("➕ O produto não existe? Cadastrar novo item manualmente")
-
-  if cadastrar_novo:
-    st.subheader("Registar Novo Item no Armazém")
-    novo_prod_nome = st.text_input("Nome do Novo Alimento / Insumo")
-    novo_prod_cod = st.text_input("Código de Barras do Novo Item")
-    novo_prod_setor = st.selectbox("Setor de Armazenamento", st.session_state.setores)
-    novo_limite = st.number_input("Limite Mínimo de Stock", min_value=1, value=10)
-
-    if st.button("Guardar Novo Item"):
-      if novo_prod_nome and novo_prod_cod:
-        nova_linha = pd.DataFrame({
-            "Codigo_Barras": [novo_prod_cod],
-            "Produto": [novo_prod_nome],
-            "Setor": [novo_prod_setor],
-            "Categoria": ["Geral"],
-            "Quantidade": [0],
-            "Limite_Minimo": [novo_limite],
-            "Validade": [datetime.date.today().strftime("%Y-%m-%d")],
-            "Ultima_Modificacao": [datetime.datetime.now().strftime("%Y-%m-%d %H:%M")],
-            "Modificado_Por": [st.session_state.username],
-        })
-        st.session_state.estoque = pd.concat(
-            [st.session_state.estoque, nova_linha], ignore_index=True
-        )
-        st.success(f"Produto '{novo_prod_nome}' criado com sucesso! Já pode selecionar abaixo.")
-        st.rerun()
-      else:
-        st.error("Preencha o nome e o código de barras.")
-    st.divider()
-
-  modo_entrada = st.radio(
-      "Método de Identificação", ["Selecionar na Lista", "Digitar Código de Barras"]
-  )
-
-  produto_selecionado = None
-  if modo_entrada == "Selecionar na Lista":
-    produto_selecionado = st.selectbox("Selecione o Alimento / Insumo", df["Produto"].tolist())
+  if not permissoes_atuais["pode_movimentar"]:
+    st.error(
+        "⚠️ O seu perfil não tem permissão para realizar movimentações de"
+        " stock."
+    )
   else:
-    cod_leitor = st.text_input("Aponte o leitor ou digite o Código de Barras")
-    if cod_leitor:
-      match = df[df["Codigo_Barras"] == cod_leitor]
-      if not match.empty:
-        produto_selecionado = match.iloc[0]["Produto"]
-        st.success(f"Item detetado: **{produto_selecionado}**")
-      else:
-        st.error("Código de barras não registado!")
+    # Opção de cadastrar item novo detalhado
+    if permissoes_atuais["pode_cadastrar"]:
+      cadastrar_novo = st.checkbox(
+          "➕ O produto não existe? Cadastrar novo item manualmente"
+      )
+      if cadastrar_novo:
+        st.subheader("Registar Novo Item Detalhado no Armazém")
+        novo_prod_nome = st.text_input("Nome do Alimento / Insumo")
+        novo_prod_cod = st.text_input("Código de Barras")
+        novo_prod_desc = st.text_area("Descrição detalhada do item")
+        novo_un_emb = st.number_input(
+            "Número de Unidades por Embalagem", min_value=1, value=1
+        )
+        novo_tipo = st.selectbox(
+            "Tipo de Item",
+            ["Matéria-Prima", "Produto Acabado", "Insumo", "Embalagem"],
+        )
+        novo_prod_setor = st.selectbox(
+            "Setor de Armazenamento", st.session_state.setores
+        )
+        novo_limite = st.number_input(
+            "Limite Mínimo de Stock", min_value=1, value=10
+        )
 
-  if produto_selecionado:
-    tipo_mov = st.radio(
-        "Operação de Armazém",
-        ["Recebimento (Entrada)", "Expedição / Baixa (Retirada)"],
+        if st.button("Guardar Novo Item Detalhado"):
+          if novo_prod_nome and novo_prod_cod:
+            nova_linha = pd.DataFrame({
+                "Codigo_Barras": [novo_prod_cod],
+                "Produto": [novo_prod_nome],
+                "Descricao": [novo_prod_desc],
+                "Unidades_Embalagem": [novo_un_emb],
+                "Tipo_Item": [novo_tipo],
+                "Setor": [novo_prod_setor],
+                "Quantidade": [0],
+                "Limite_Minimo": [novo_limite],
+                "Validade": [datetime.date.today().strftime("%Y-%m-%d")],
+                "Ultima_Modificacao": [
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                ],
+                "Modificado_Por": [st.session_state.username],
+            })
+            st.session_state.estoque = pd.concat(
+                [st.session_state.estoque, nova_linha], ignore_index=True
+            )
+            st.success(
+                f"Produto '{novo_prod_nome}' cadastrado com sucesso!"
+            )
+            st.rerun()
+          else:
+            st.error("Preencha o nome e o código de barras.")
+        st.divider()
+
+    modo_entrada = st.radio(
+        "Método de Identificação",
+        ["Selecionar na Lista", "Digitar Código de Barras"],
     )
-    qtd_mov = st.number_input("Quantidade", min_value=1, step=1)
 
-    nova_validade = None
-    if "Recebimento" in tipo_mov:
-      nova_validade = st.date_input("Data de Validade do Lote", datetime.date.today())
-
-    anexo = st.file_uploader(
-        "Anexar Nota Fiscal / Certificado (Opcional)", type=["pdf", "png", "jpg"]
-    )
-
-    if st.button("Registar Operação"):
-      idx = df[df["Produto"] == produto_selecionado].index[0]
-      data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-
-      if "Recebimento" in tipo_mov:
-        df.loc[idx, "Quantidade"] += qtd_mov
-        if nova_validade:
-          df.loc[idx, "Validade"] = str(nova_validade)
-        acao = "Recebimento"
-      else:
-        if df.loc[idx, "Quantidade"] >= qtd_mov:
-          df.loc[idx, "Quantidade"] -= qtd_mov
-          acao = "Expedição"
+    produto_selecionado = None
+    if modo_entrada == "Selecionar na Lista":
+      produto_selecionado = st.selectbox(
+          "Selecione o Alimento / Insumo", df["Produto"].tolist()
+      )
+    else:
+      cod_leitor = st.text_input("Aponte o leitor ou digite o Código de Barras")
+      if cod_leitor:
+        match = df[df["Codigo_Barras"] == cod_leitor]
+        if not match.empty:
+          produto_selecionado = match.iloc[0]["Produto"]
+          st.success(f"Item detetado: **{produto_selecionado}**")
         else:
-          st.error("Quantidade insuficiente em stock!")
-          st.stop()
+          st.error("Código de barras não registado!")
 
-      df.loc[idx, "Ultima_Modificacao"] = data_atual
-      df.loc[idx, "Modificado_Por"] = st.session_state.username
-
-      nova_hist = pd.DataFrame(
-          [[data_atual, st.session_state.username, acao, produto_selecionado, qtd_mov]],
-          columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"],
+    if produto_selecionado:
+      tipo_mov = st.radio(
+          "Operação de Armazém",
+          ["Recebimento (Entrada)", "Expedição / Baixa (Retirada)"],
       )
-      st.session_state.historico = pd.concat(
-          [st.session_state.historico, nova_hist], ignore_index=True
+      qtd_mov = st.number_input("Quantidade", min_value=1, step=1)
+
+      nova_validade = None
+      if "Recebimento" in tipo_mov:
+        nova_validade = st.date_input(
+            "Data de Validade do Lote", datetime.date.today()
+        )
+
+      anexo = st.file_uploader(
+          "Anexar Nota Fiscal / Certificado (Opcional)",
+          type=["pdf", "png", "jpg"],
       )
 
-      st.success(f"Operação de {acao} registada com sucesso!")
+      if st.button("Registar Operação"):
+        idx = df[df["Produto"] == produto_selecionado].index[0]
+        data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+        if "Recebimento" in tipo_mov:
+          df.loc[idx, "Quantidade"] += qtd_mov
+          if nova_validade:
+            df.loc[idx, "Validade"] = str(nova_validade)
+          acao = "Recebimento"
+        else:
+          if df.loc[idx, "Quantidade"] >= qtd_mov:
+            df.loc[idx, "Quantidade"] -= qtd_mov
+            acao = "Expedição"
+          else:
+            st.error("Quantidade insuficiente em stock!")
+            st.stop()
+
+        df.loc[idx, "Ultima_Modificacao"] = data_atual
+        df.loc[idx, "Modificado_Por"] = st.session_state.username
+
+        nova_hist = pd.DataFrame(
+            [[
+                data_atual,
+                st.session_state.username,
+                acao,
+                produto_selecionado,
+                qtd_mov,
+            ]],
+            columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"],
+        )
+        st.session_state.historico = pd.concat(
+            [st.session_state.historico, nova_hist], ignore_index=True
+        )
+
+        st.success(f"Operação de {acao} registada com sucesso!")
 
 
 # --- 4. GESTÃO DE PEDIDOS & CHECK-LIST ---
@@ -379,12 +523,18 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
 
   col_p1, col_p2 = st.columns(2)
   with col_p1:
-    prod_pedido = st.selectbox("Produto", df["Produto"].tolist(), key="p_prod")
+    prod_pedido = st.selectbox(
+        "Produto", df["Produto"].tolist(), key="p_prod"
+    )
   with col_p2:
-    qtd_pedido_item = st.number_input("Quantidade Solicitada", min_value=1, step=1, key="p_qtd")
+    qtd_pedido_item = st.number_input(
+        "Quantidade Solicitada", min_value=1, step=1, key="p_qtd"
+    )
 
   if st.button("Adicionar Item à Lista de Separação"):
-    st.session_state.pedido_temp.append({"produto": prod_pedido, "qtd": qtd_pedido_item})
+    st.session_state.pedido_temp.append(
+        {"produto": prod_pedido, "qtd": qtd_pedido_item}
+    )
     st.success(f"Adicionado: {prod_pedido} ({qtd_pedido_item} un)")
 
   if st.session_state.pedido_temp:
@@ -398,7 +548,11 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
         st.session_state.pedidos_ativos[id_ped] = {
             "cliente": nome_cliente,
             "itens": [
-                {"produto": i["produto"], "qtd_pedida": i["qtd"], "separado": False}
+                {
+                    "produto": i["produto"],
+                    "qtd_pedida": i["qtd"],
+                    "separado": False,
+                }
                 for i in st.session_state.pedido_temp
             ],
             "concluido": False,
@@ -416,8 +570,12 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
     st.info("Não existem pedidos ativos no momento.")
   else:
     for id_p, dados_p in st.session_state.pedidos_ativos.items():
-      status_txt = "✅ Concluído" if dados_p["concluido"] else "⏳ Em Separação (Pendente)"
-      with st.expander(f"📦 {id_p} - Cliente: {dados_p['cliente']} [{status_txt}]"):
+      status_txt = (
+          "✅ Concluído" if dados_p["concluido"] else "⏳ Em Separação (Pendente)"
+      )
+      with st.expander(
+          f"📦 {id_p} - Cliente: {dados_p['cliente']} [{status_txt}]"
+      ):
 
         todos_separados = True
         for idx_i, item in enumerate(dados_p["itens"]):
@@ -439,11 +597,20 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
             todos_separados = False
 
         if not todos_separados:
-          st.warning("⚠️ **Pedido incompleto:** Faltam itens por separar e retirar do stock.")
+          st.warning(
+              "⚠️ **Pedido incompleto:** Faltam itens por separar e retirar do"
+              " stock."
+          )
         else:
-          st.success("✨ **Pedido totalmente separado!** Pronto para dar baixa automática.")
+          st.success(
+              "✨ **Pedido totalmente separado!** Pronto para dar baixa"
+              " automática."
+          )
           if not dados_p["concluido"]:
-            if st.button(f"Confirmar Retirada Automática ({id_p})", key=f"btn_baixa_{id_p}"):
+            if st.button(
+                f"Confirmar Retirada Automática ({id_p})",
+                key=f"btn_baixa_{id_p}",
+            ):
               erro_baixa = False
               for item in dados_p["itens"]:
                 p_nome = item["produto"]
@@ -452,10 +619,24 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
 
                 if df.loc[row_idx, "Quantidade"] >= q_ped:
                   df.loc[row_idx, "Quantidade"] -= q_ped
-                  data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                  data_atual = datetime.datetime.now().strftime(
+                      "%Y-%m-%d %H:%M"
+                  )
                   nova_hist = pd.DataFrame(
-                      [[data_atual, st.session_state.username, "Expedição por Pedido", p_nome, q_ped]],
-                      columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"],
+                      [[
+                          data_atual,
+                          st.session_state.username,
+                          "Expedição por Pedido",
+                          p_nome,
+                          q_ped,
+                      ]],
+                      columns=[
+                          "Data",
+                          "Utilizador",
+                          "Acao",
+                          "Item",
+                          "Quantidade",
+                      ],
                   )
                   st.session_state.historico = pd.concat(
                       [st.session_state.historico, nova_hist], ignore_index=True
@@ -466,39 +647,60 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
 
               if not erro_baixa:
                 dados_p["concluido"] = True
-                st.success("Baixa automática realizada com sucesso!")
+                st.success(
+                    "Baixa automática realizada com sucesso no stock!"
+                )
                 st.rerun()
 
 
-# --- 5. MENSAGENS ---
+# --- 5. MENSAGENS & ENVIO DE FICHEIROS ENTRE UTILIZADORES ---
 elif menu.startswith("💬 Mensagens"):
-  st.header("💬 Central de Mensagens da Equipa")
-  st.subheader("Enviar Recado / Aviso")
-  lista_destinatarios = [u for u in st.session_state.users.keys() if u != st.session_state.username]
+  st.header("💬 Central de Mensagens e Partilha de Ficheiros entre Utilizadores")
+
+  st.subheader("Enviar Nova Mensagem / Ficheiro")
+  lista_destinatarios = [
+      u
+      for u in st.session_state.users.keys()
+      if u != st.session_state.username
+  ]
 
   if not lista_destinatarios:
     st.info("Não existem outros utilizadores registados.")
   else:
-    destinatario = st.selectbox("Para:", lista_destinatarios)
-    texto_msg = st.text_area("Mensagem")
+    destinatario = st.selectbox("Enviar para:", lista_destinatarios)
+    texto_msg = st.text_area("Texto / Recado")
+    ficheiro_anexado = st.file_uploader(
+        "Anexar Ficheiro para o Utilizador (Opcional)",
+        type=["pdf", "png", "jpg", "csv", "xlsx", "txt"],
+    )
 
-    if st.button("Enviar Mensagem"):
-      if texto_msg.strip():
+    if st.button("Enviar Mensagem / Ficheiro"):
+      if texto_msg.strip() or ficheiro_anexado:
+        f_nome = ficheiro_anexado.name if ficheiro_anexado else None
+        f_bytes = ficheiro_anexado.getvalue() if ficheiro_anexado else None
+
         nova_m = {
             "de": st.session_state.username,
             "para": destinatario,
             "texto": texto_msg,
+            "ficheiro_nome": f_nome,
+            "ficheiro_bytes": f_bytes,
             "data": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
             "lida": False,
         }
         st.session_state.mensagens.append(nova_m)
-        st.success("Mensagem enviada!")
+        st.success("Mensagem e ficheiro enviados com sucesso!")
+        st.rerun()
       else:
-        st.error("Escreva uma mensagem válida.")
+        st.error("Escreva uma mensagem ou anexe um ficheiro.")
 
   st.divider()
-  st.subheader("Caixa de Entrada")
-  minhas_msgs = [m for m in st.session_state.mensagens if m["para"] == st.session_state.username]
+  st.subheader("Caixa de Entrada (Mensagens Recebidas)")
+  minhas_msgs = [
+      m
+      for m in st.session_state.mensagens
+      if m["para"] == st.session_state.username
+  ]
 
   if not minhas_msgs:
     st.info("A sua caixa de entrada está limpa.")
@@ -507,6 +709,13 @@ elif menu.startswith("💬 Mensagens"):
       estado = "📩 [Novo]" if not m["lida"] else "✔️ [Lido]"
       with st.expander(f"{estado} De: {m['de']} em {m['data']}"):
         st.write(m["texto"])
+        if m["ficheiro_nome"]:
+          st.download_button(
+              label=f"📥 Descarregar Ficheiro: {m['ficheiro_nome']}",
+              data=m["ficheiro_bytes"],
+              file_name=m["ficheiro_nome"],
+              key=f"dl_msg_{i}",
+          )
         if not m["lida"]:
           if st.button(f"Marcar como lida #{i}", key=f"lida_{i}"):
             m["lida"] = True
