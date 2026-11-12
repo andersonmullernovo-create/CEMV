@@ -210,9 +210,20 @@ if menu == "⚙️ Painel do Administrador & Agenda":
     for u, dados in list(st.session_state.users.items()):
       c1, c2 = st.columns([3, 1])
       with c1:
-        st.write(
-            f"- **{u}** ({dados['perfil']}) | Cadastrar: {dados['pode_cadastrar']}"
-            f" | Excluir: {dados['pode_excluir']}"
+        st.divider()
+    st.subheader("Utilizadores Atuais & Eliminação")
+    for u, dados in list(st.session_state.users.items()):
+      c1, c2 = st.columns([3, 1])
+      with c1:
+        pode_c = dados.get("pode_cadastrar", True)
+        pode_e = dados.get("pode_excluir", False)
+        st.write(f"- *{u}* ({dados.get('perfil', 'Operador')}) | Cadastrar: {pode_c} | Excluir: {pode_e}")
+      with c2:
+        if u != "admin":
+          if st.button(f"Excluir #{u}", key=f"del_user_{u}"):
+            del st.session_state.users[u]
+            st.success(f"Utilizador {u} eliminado!")
+            st.rerun()
         )
       with c2:
         if u != "admin":  # Evitar apagar o admin principal
