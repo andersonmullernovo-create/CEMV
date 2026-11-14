@@ -289,12 +289,23 @@ if menu == "⚙️ Painel do Administrador & Agenda":
             value=int(df.loc[idx_ed, "Limite_Minimo"]),
             key="ed_m",
         )
+        ns = st.selectbox(
+            "Setor",
+            st.session_state.setores,
+            index=(
+                st.session_state.setores.index(df.loc[idx_ed, "Setor"])
+                if df.loc[idx_ed, "Setor"] in st.session_state.setores
+                else 0
+            ),
+            key="ed_s",
+        )
         if st.button("Guardar Alterações"):
           df.loc[idx_ed, "Produto"] = nn
           df.loc[idx_ed, "Descricao"] = nd
           df.loc[idx_ed, "Unidades_Embalagem"] = ne
           df.loc[idx_ed, "Limite_Minimo"] = nm
-          st.success("Atualizado!")
+          df.loc[idx_ed, "Setor"] = ns
+          st.success("Atualizado com sucesso!")
           st.rerun()
 
   with tab_adm5:
@@ -337,9 +348,9 @@ if menu == "⚙️ Painel do Administrador & Agenda":
 
 # --- 2. CONSULTAR STOCK ---
 elif menu == "🍲 Consultar Stock & Setores":
-  st.markdown("## 🍲 Consulta de Stock")
+  st.markdown("## 🍲 Consulta de Stock por Setor")
   setor_filtro = st.selectbox(
-      "Setor", ["Todos os Setores"] + st.session_state.setores
+      "Filtrar por Setor", ["Todos os Setores"] + st.session_state.setores
   )
   pesquisa = st.text_input("🔍 Pesquisar por Produto ou Código", "")
 
@@ -392,7 +403,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           m_tipo = st.selectbox(
               "Tipo", ["Produto Acabado", "Matéria-Prima", "Insumo", "Embalagem"]
           )
-          m_setor = st.selectbox("Setor", st.session_state.setores)
+          m_setor = st.selectbox("Setor de Armazenamento", st.session_state.setores)
           m_min = st.number_input("Limite Mínimo", min_value=1, value=10)
 
         if st.button("Guardar Novo Produto Manual"):
@@ -415,7 +426,9 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
             st.session_state.estoque = pd.concat(
                 [st.session_state.estoque, nova_l], ignore_index=True
             )
-            st.success("Produto adicionado manualmente ao stock!")
+            st.success(
+                f"Produto adicionado ao setor '{m_setor}' com sucesso!"
+            )
             st.rerun()
           else:
             st.error("Preencha o nome e o código de barras.")
@@ -434,14 +447,19 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
             "Produto", df["Produto"].tolist(), key="sel_mov_l"
         )
       else:
-        bc = st.text_input("Bipar Código de Barras", key="bc_mov")
+        bc = st.text_input(
+            "Bipar Código de Barras (Câmara / Leitor)", key="bc_mov"
+        )
         if bc:
           m = df[df["Codigo_Barras"] == bc]
           if not m.empty:
             prod_mov = m.iloc[0]["Produto"]
-            st.success(f"Encontrado: {prod_mov}")
+            st.success(
+                f"Encontrado: **{prod_mov}** (Setor:"
+                f" {m.iloc[0]['Setor']})"
+            )
           else:
-            st.error("Não encontrado.")
+            st.error("Código de barras não encontrado.")
 
       if prod_mov:
         tipo_op = st.radio(
@@ -454,6 +472,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
         )
         if st.button("Registar Movimento"):
           idx = df[df["Produto"] == prod_mov].index[0]
+          setor_reg = df.loc[idx, "Setor"]
           if "Recebimento" in tipo_op:
             df.loc[idx, "Quantidade"] += qtd_op
           else:
@@ -462,15 +481,15 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
             else:
               st.error("Stock insuficiente!")
               st.stop()
-          st.success("Movimento registado com sucesso!")
+          st.success(f"Movimento registado no setor **{setor_reg}**!")
 
 
 # --- 4. GESTÃO DE PEDIDOS & CHECK-LIST ---
 elif menu == "📋 Gestão de Pedidos & Check-list":
   st.markdown("## 📋 Setor de Separação de Pedidos & Check-list")
   st.markdown(
-      "Tire foto do talão ou adicione itens manualmente, gere o pedido e"
-      " gerencie a separação."
+      "Importe o talão da Neriah, gere o pedido e separe os itens por setor"
+      " usando leitor de código de barras ou botões."
   )
 
   sub_tab1, sub_tab2 = st.tabs([
@@ -510,12 +529,11 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       if "temp_itens" not in st.session_state:
         st.session_state.temp_itens = []
 
-      # --- BOTÃO FIXO DE IMPORTAÇÃO RÁPIDA (Sempre visível nesta aba) ---
+      # --- BOTÃO DE IMPORTAÇÃO RÁPIDA DO TALÃO DA NERIAH ---
       st.markdown("---")
       st.info(
           "⚡ **Atalho de Importação:** Clique no botão abaixo para carregar"
-          " automaticamente todos os itens do talão da Neriah[span_1](start_span)[span_1](end_span) para a"
-          " lista de separação."
+          " automaticamente todos os 22 itens do talão da Neriah[span_0](start_span)[span_0](end_span)."
       )
       if st.button(
           "⚡ [Importação Automática] Carregar Itens do Talão da Neriah",
@@ -549,10 +567,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
             {"produto": "Massa p/ Pastel (2 Unidades)", "qtd": 1},
         ]
         st.session_state.temp_itens = itens_talao_neriah
-        st.success(
-            "⚡ Todos os itens do talão foram carregados com sucesso para a"
-            " lista!"
-        )
+        st.success("⚡ Todos os itens do talão foram carregados com sucesso!")
         st.rerun()
 
       st.markdown("---")
@@ -645,17 +660,20 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
           if not match_stk.empty:
             r_idx = match_stk.index[0]
             if df.loc[r_idx, "Quantidade"] >= q_s:
-              itens_para_abater.append((r_idx, p_n, q_s))
+              itens_para_abater.append(
+                  (r_idx, p_n, q_s, df.loc[r_idx, "Setor"])
+              )
             else:
               erro_stk = True
               st.error(
-                  f"⚠️ Stock insuficiente para **{p_n}** (Disponível:"
+                  f"⚠️ Stock insuficiente para **{p_n}** no setor"
+                  f" {df.loc[r_idx, 'Setor']} (Disponível:"
                   f" {df.loc[r_idx, 'Quantidade']}, Pedido: {q_s})!"
               )
 
         if not erro_stk:
           data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-          for r_idx, p_n, q_s in itens_para_abater:
+          for r_idx, p_n, q_s, setor_prod in itens_para_abater:
             df.loc[r_idx, "Quantidade"] -= q_s
             df.loc[r_idx, "Ultima_Modificacao"] = data_atual
             df.loc[r_idx, "Modificado_Por"] = st.session_state.username
@@ -664,7 +682,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                 [[
                     data_atual,
                     st.session_state.username,
-                    f"Expedição ({pid_alvo})",
+                    f"Expedição Setor {setor_prod} ({pid_alvo})",
                     p_n,
                     q_s,
                 ]],
@@ -680,7 +698,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
 
       for pid, pdata in st.session_state.pedidos_ativos.items():
         status_txt = (
-            "✅ Concluído (Baixa Efetuada)"
+            "✅ Concluído (Baixa por Setor Efetuada)"
             if pdata["concluido"]
             else "⏳ Em Andamento (Separação)"
         )
@@ -702,15 +720,17 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                 horizontal=True,
             )
 
+            # CAMPO DE LEITURA DE CÓDIGO DE BARRAS (Funciona com telemóvel / leitor de barras)
             scan_codigo = st.text_input(
-                f"🔍 Escanear Código de Barras do Produto ({pid})",
+                f"🔍 Escanear Código de Barras (Leitor ou Câmara do Telemóvel) ({pid})",
                 key=f"scan_sep_{pid}",
-                placeholder="Passe o leitor de barras para separar 1 unidade...",
+                placeholder="Aponte o leitor ou use teclado com scanner...",
             )
             if scan_codigo:
               match_bar = df[df["Codigo_Barras"] == scan_codigo]
               if not match_bar.empty:
                 nome_prod_encontrado = match_bar.iloc[0]["Produto"]
+                setor_encontrado = match_bar.iloc[0]["Setor"]
                 achou_no_pedido = False
                 for itm in pdata["itens"]:
                   if itm["produto"] == nome_prod_encontrado:
@@ -718,7 +738,8 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                     if itm["qtd_separada"] < itm["qtd_pedida"]:
                       itm["qtd_separada"] += 1
                       st.toast(
-                          f"✔️ +1 {nome_prod_encontrado}"
+                          f"✔️ Separado 1 {nome_prod_encontrado} [Setor:"
+                          f" {setor_encontrado}]"
                           f" ({itm['qtd_separada']}/{itm['qtd_pedida']})"
                       )
                     else:
@@ -728,11 +749,11 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                       )
                 if not achou_no_pedido:
                   st.error(
-                      f"O produto '{nome_prod_encontrado}' não pertence a este"
-                      " pedido!"
+                      f"O produto '{nome_prod_encontrado}' (Setor:"
+                      f" {setor_encontrado}) não pertence a este pedido!"
                   )
               else:
-                st.error("Código de barras desconhecido!")
+                st.error("Código de barras desconhecido no sistema!")
 
           st.markdown("---")
           todos_ok = True
@@ -740,6 +761,14 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
             p_name = item["produto"]
             m_qtd = item["qtd_pedida"]
             a_qtd = item["qtd_separada"]
+
+            # Descobre o setor do item no stock para exibir na lista
+            match_stk = df[df["Produto"] == p_name]
+            setor_item = (
+                match_stk.iloc[0]["Setor"]
+                if not match_stk.empty
+                else "Manual/Outros"
+            )
 
             estilo_cor = (
                 "color: #28a745; font-weight: bold; background-color: #e8f5e9;"
@@ -751,7 +780,8 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
             col1, col2, col3 = st.columns([3, 2, 2])
             with col1:
               st.markdown(
-                  f"<span style='{estilo_cor}'>{p_name}</span>",
+                  f"<span style='{estilo_cor}'>📦 {p_name}<br><small>🏭 Setor:"
+                  f" <b>{setor_item}</b></small></span>",
                   unsafe_allow_html=True,
               )
             with col2:
@@ -781,21 +811,21 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
 
           if pdata["concluido"]:
             st.success(
-                "✅ **Pedido Finalizado:** Os itens já foram descontados do"
-                " stock e registados no histórico."
+                "✅ **Pedido Finalizado:** Os itens foram removidos com sucesso"
+                " dos respetivos setores e registados no histórico."
             )
           elif not todos_ok:
             st.warning(
-                "⚠️ Separação em andamento. Escaneie os códigos de barras ou"
-                " utilize os botões manuais."
+                "⚠️ Separação em andamento. Leia os códigos de barras no setor"
+                " correspondente ou use os botões."
             )
           else:
             if "Automática" in modo_baixa:
               sucesso = executar_baixa_pedido(pid, pdata)
               if sucesso:
                 st.success(
-                    "⚡ **Baixa Automática Concluída!** Todos os itens atingiram"
-                    " 100% e foram abatidos do stock."
+                    "⚡ **Baixa Automática por Setor Concluída!** Os itens foram"
+                    " retirados dos seus setores de origem."
                 )
                 st.rerun()
             else:
@@ -804,14 +834,15 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                   " conferência."
               )
               if st.button(
-                  f"📥 Confirmar e Dar Baixa Manual no Stock ({pid})",
+                  f"📥 Confirmar e Dar Baixa Manual nos Setores ({pid})",
                   key=f"baixar_{pid}",
                   type="primary",
               ):
                 sucesso = executar_baixa_pedido(pid, pdata)
                 if sucesso:
                   st.success(
-                      "✅ Baixa manual efetuada com sucesso no stock geral!"
+                      "✅ Baixa manual efetuada com sucesso nos setores de"
+                      " origem!"
                   )
                   st.rerun()
 
