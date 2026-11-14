@@ -491,7 +491,6 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
         )
       elif modo_mov == "Bipar com Câmara Traseira (Scanner)":
         st.info("📸 Aponte a câmara traseira para o código de barras:")
-        # Força o uso da câmara traseira com facingMode="environment"
         foto_scanner = st.camera_input(
             "Escanear Código de Barras",
             key="cam_scanner_entrada",
@@ -587,3 +586,431 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
               [st.session_state.historico, nova_hist], ignore_index=True
           )
           st.success(
+              f"Operação de {acao} registada com sucesso no setor **{setor_reg}**!"
+          )
+
+
+# --- 4. GESTÃO DE PEDIDOS & CHECK-LIST ---
+elif menu == "📋 Gestão de Pedidos & Check-list":
+  st.markdown("## 📋 Setor de Separação de Pedidos & Check-list")
+  st.markdown(
+      "Importe o talão, gere o pedido e separe os itens por setor usando a"
+      " câmara traseira ou leitor."
+  )
+
+  sub_tab1, sub_tab2 = st.tabs([
+      "📸 Criar Novo Pedido (Câmara / Manual)",
+      "📦 Ver Pedidos Salvos & Ativos",
+  ])
+
+  with sub_tab1:
+    with st.container(border=True):
+      st.subheader("1. Capturar ou Inserir Dados do Pedido")
+      tipo_cap = st.radio(
+          "Origem do Pedido",
+          [
+              "Tirar Foto com a Câmara Traseira",
+              "Carregar Ficheiro de Talão",
+              "Apenas Inserção Manual",
+          ],
+          horizontal=True,
+      )
+
+      img_ped = None
+      if tipo_cap == "Tirar Foto com a Câmara Traseira":
+        img_ped = st.camera_input(
+            "Aponte para o talão do pedido", key="cam_traseira_talao"
+        )
+      elif tipo_cap == "Carregar Ficheiro de Talão":
+        img_ped = st.file_uploader(
+            "Ficheiro de imagem do talão", type=["png", "jpg", "jpeg"]
+        )
+
+      cli_nome = st.text_input(
+          "Nome do Cliente / Destino",
+          value="Neriah Comércio",
+          placeholder="Ex: Neriah Comércio",
+      )
+
+      if "temp_itens" not in st.session_state:
+        st.session_state.temp_itens = []
+
+      st.markdown("---")
+      st.info(
+          "⚡ **Atalho de Importação:** Clique no botão abaixo para carregar"
+          " automaticamente todos os 22 itens do talão da Neriah[span_1](start_span)[span_1](end_span)."
+      )
+      if st.button(
+          "⚡ [Importação Automática] Carregar Itens do Talão da Neriah",
+          type="primary",
+      ):
+        itens_talao_neriah = [
+            {"produto": "Chocolate - Calzone 12 Uni", "qtd": 1},
+            {
+                "produto": "Duo - Chocolate Branco e Preto 12 Uni",
+                "qtd": 1,
+            },
+            {"produto": "Nutella - Calzone 12 Uni", "qtd": 1},
+            {"produto": "Bolonhesa - Calzone 12 Uni", "qtd": 1},
+            {"produto": "Português - Calzone 12 Uni", "qtd": 3},
+            {"produto": "Frango Supremo - Calzone 12 Uni", "qtd": 2},
+            {"produto": "Frango Catupiry - Calzone 12 Uni", "qtd": 4},
+            {"produto": "Quatro Queijos - Calzone 12 Uni", "qtd": 2},
+            {"produto": "Frango c/ Muçarela e Orégano - Calzone", "qtd": 3},
+            {"produto": "Calabresa - Calzone 12 Uni", "qtd": 2},
+            {"produto": "Calab c/Mussarela - Calzone 12 Uni", "qtd": 4},
+            {"produto": "Filé Quatro Queijos - Calzone 12 Uni", "qtd": 3},
+            {"produto": "Carne Seca - Calzone 12 Uni", "qtd": 1},
+            {"produto": "Filé c/ Cheddar - Calzone 12 Uni", "qtd": 2},
+            {"produto": "Pizza Calabresa - 4 Unidades", "qtd": 2},
+            {"produto": "Pizza Portuguesa - 4 Unidades", "qtd": 1},
+            {"produto": "Pizza de Bacon com Catupiry - 4 Unidades", "qtd": 1},
+            {"produto": "Recheio Camarão Premium 800g", "qtd": 1},
+            {"produto": "Recheio Carne 800g", "qtd": 2},
+            {"produto": "Recheio de Mussarela 800g", "qtd": 3},
+            {"produto": "Recheio Calabresa 0,8 Kg", "qtd": 1},
+            {"produto": "Massa p/ Pastel (2 Unidades)", "qtd": 1},
+        ]
+        st.session_state.temp_itens = itens_talao_neriah
+        st.success("⚡ Todos os itens do talão foram carregados com sucesso!")
+        st.rerun()
+
+      st.markdown("---")
+      st.subheader("2. Adicionar ou Ajustar Itens do Pedido")
+
+      modo_add_ped = st.radio(
+          "Como adicionar o item?",
+          ["Selecionar do Stock", "Digitar Nome Manualmente"],
+          horizontal=True,
+          key="modo_add_pedido",
+      )
+
+      c_p1, c_p2 = st.columns([2, 1])
+      with c_p1:
+        if modo_add_ped == "Selecionar do Stock":
+          item_sel = st.selectbox(
+              "Produto do Stock", df["Produto"].tolist(), key="sel_item_ped"
+          )
+        else:
+          item_sel = st.text_input(
+              "Nome do Produto Manual / Personalizado",
+              key="txt_item_ped_manual",
+          )
+      with c_p2:
+        qtd_sel = st.number_input(
+            "Quantidade", min_value=1, value=1, key="qtd_item_ped"
+        )
+
+      if st.button("➕ Adicionar Item à Lista do Pedido"):
+        if item_sel and str(item_sel).strip():
+          st.session_state.temp_itens.append(
+              {"produto": str(item_sel).strip(), "qtd": qtd_sel}
+          )
+          st.success(f"Adicionado: {item_sel} ({qtd_sel} un)")
+        else:
+          st.error("Informe o nome do produto.")
+
+      if st.session_state.temp_itens:
+        st.markdown("#### **Itens Adicionados no Pedido Atual:**")
+        for it in st.session_state.temp_itens:
+          st.write(f"- {it['produto']}: **{it['qtd']} un**")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button(
+            "🚀 Gerar Pedido e Abrir Janela de Separação", type="primary"
+        ):
+          if cli_nome and cli_nome.strip():
+            pid = f"Pedido_{datetime.datetime.now().strftime('%H%M%S')}"
+            st.session_state.pedidos_ativos[pid] = {
+                "cliente": cli_nome.strip(),
+                "data_criacao": datetime.datetime.now().strftime(
+                    "%Y-%m-%d %H:%M"
+                ),
+                "itens": [
+                    {
+                        "produto": i["produto"],
+                        "qtd_pedida": i["qtd"],
+                        "qtd_separada": 0,
+                    }
+                    for i in st.session_state.temp_itens
+                ],
+                "concluido": False,
+            }
+            st.session_state.temp_itens = []
+            st.success(
+                f"🎉 Pedido '{pid}' gerado com sucesso! Vá para a aba 'Ver"
+                " Pedidos Salvos & Ativos' para iniciar a separação."
+            )
+            st.rerun()
+          else:
+            st.error("Por favor, preencha o nome do cliente/destino.")
+
+  with sub_tab2:
+    st.subheader("📦 Lista de Todos os Pedidos Salvos e Ativos")
+
+    if not st.session_state.pedidos_ativos:
+      st.info(
+          "ℹ️ Nenhum pedido registado ou em separação no momento. Crie um na"
+          " aba ao lado."
+      )
+    else:
+
+      def executar_baixa_pedido(pid_alvo, dados_pedido):
+        erro_stk = False
+        itens_para_abater = []
+        for item in dados_pedido["itens"]:
+          p_n = item["produto"]
+          q_s = item["qtd_pedida"]
+          match_stk = df[df["Produto"] == p_n]
+          if not match_stk.empty:
+            r_idx = match_stk.index[0]
+            if df.loc[r_idx, "Quantidade"] >= q_s:
+              itens_para_abater.append(
+                  (r_idx, p_n, q_s, df.loc[r_idx, "Setor"])
+              )
+            else:
+              erro_stk = True
+              st.error(
+                  f"⚠️ Stock insuficiente para **{p_n}** no setor"
+                  f" {df.loc[r_idx, 'Setor']} (Disponível:"
+                  f" {df.loc[r_idx, 'Quantidade']}, Pedido: {q_s})!"
+              )
+
+        if not erro_stk:
+          data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+          for r_idx, p_n, q_s, setor_prod in itens_para_abater:
+            df.loc[r_idx, "Quantidade"] -= q_s
+            df.loc[r_idx, "Ultima_Modificacao"] = data_atual
+            df.loc[r_idx, "Modificado_Por"] = st.session_state.username
+
+            nova_hist = pd.DataFrame(
+                [[
+                    data_atual,
+                    st.session_state.username,
+                    f"Expedição Setor {setor_prod} ({pid_alvo})",
+                    p_n,
+                    q_s,
+                ]],
+                columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"],
+            )
+            st.session_state.historico = pd.concat(
+                [st.session_state.historico, nova_hist], ignore_index=True
+            )
+
+          dados_pedido["concluido"] = True
+          return True
+        return False
+
+      for pid, pdata in st.session_state.pedidos_ativos.items():
+        status_txt = (
+            "✅ Concluído (Baixa por Setor Efetuada)"
+            if pdata["concluido"]
+            else "⏳ Em Andamento (Separação)"
+        )
+        data_criacao = pdata.get("data_criacao", "Data não registada")
+
+        with st.expander(
+            f"📦 {pid} — Cliente: **{pdata['cliente']}** [{status_txt}]"
+            f" (Criado em: {data_criacao})",
+            expanded=not pdata["concluido"],
+        ):
+          if not pdata["concluido"]:
+            modo_baixa = st.radio(
+                "⚙️ Modo de Baixa no Stock:",
+                [
+                    "Automática (ao concluir 100% da separação)",
+                    "Manual (confirmar por botão no final)",
+                ],
+                key=f"modo_baixa_{pid}",
+                horizontal=True,
+            )
+
+            metodo_leitura = st.radio(
+                "Método de Leitura para Separação",
+                [
+                    "Digitar / Usar Leitor Físico",
+                    "Escanear com Câmara Traseira",
+                ],
+                horizontal=True,
+                key=f"metodo_leitura_{pid}",
+            )
+
+            scan_codigo = None
+            if metodo_leitura == "Digitar / Usar Leitor Físico":
+              scan_codigo = st.text_input(
+                  f"🔍 Código de Barras ({pid})",
+                  key=f"scan_sep_{pid}",
+                  placeholder="Passe o leitor ou digite...",
+              )
+            else:
+              st.info(
+                  "📷 Aponte a câmara traseira do telemóvel ao código de"
+                  " barras:"
+              )
+              foto_sep = st.camera_input(
+                  "Câmara Traseira para Check-list", key=f"cam_sep_{pid}"
+              )
+              if foto_sep is not None:
+                scan_codigo = st.text_input(
+                    f"Confirme o código escaneado pela câmara ({pid}):",
+                    key=f"conf_cam_{pid}",
+                    placeholder="Ex: 789101",
+                )
+
+            if scan_codigo:
+              match_bar = df[df["Codigo_Barras"] == scan_codigo]
+              if not match_bar.empty:
+                nome_prod_encontrado = match_bar.iloc[0]["Produto"]
+                setor_encontrado = match_bar.iloc[0]["Setor"]
+                achou_no_pedido = False
+                for itm in pdata["itens"]:
+                  if itm["produto"] == nome_prod_encontrado:
+                    achou_no_pedido = True
+                    if itm["qtd_separada"] < itm["qtd_pedida"]:
+                      itm["qtd_separada"] += 1
+                      st.toast(
+                          f"✔️ Separado 1 {nome_prod_encontrado} [Setor:"
+                          f" {setor_encontrado}]"
+                          f" ({itm['qtd_separada']}/{itm['qtd_pedida']})"
+                      )
+                    else:
+                      st.warning(
+                          f"O item {nome_prod_encontrado} já está completo neste"
+                          " pedido!"
+                      )
+                if not achou_no_pedido:
+                  st.error(
+                      f"O produto '{nome_prod_encontrado}' (Setor:"
+                      f" {setor_encontrado}) não pertence a este pedido!"
+                  )
+              else:
+                st.error("Código de barras desconhecido no sistema!")
+
+          st.markdown("---")
+          todos_ok = True
+          for i_idx, item in enumerate(pdata["itens"]):
+            p_name = item["produto"]
+            m_qtd = item["qtd_pedida"]
+            a_qtd = item["qtd_separada"]
+
+            match_stk = df[df["Produto"] == p_name]
+            setor_item = (
+                match_stk.iloc[0]["Setor"]
+                if not match_stk.empty
+                else "Manual/Outros"
+            )
+
+            estilo_cor = (
+                "color: #28a745; font-weight: bold; background-color: #e8f5e9;"
+                " padding: 4px 8px; border-radius: 4px;"
+                if a_qtd >= m_qtd
+                else "color: #333;"
+            )
+
+            col1, col2, col3 = st.columns([3, 2, 2])
+            with col1:
+              st.markdown(
+                  f"<span style='{estilo_cor}'>📦 {p_name}<br><small>🏭 Setor:"
+                  f" <b>{setor_item}</b></small></span>",
+                  unsafe_allow_html=True,
+              )
+            with col2:
+              st.markdown(
+                  f"<span style='{estilo_cor}'>Separado:"
+                  f" **{a_qtd}/{m_qtd}**</span>",
+                  unsafe_allow_html=True,
+              )
+            with col3:
+              if not pdata["concluido"]:
+                b_col1, b_col2 = st.columns(2)
+                with b_col1:
+                  if st.button("➕", key=f"mais_{pid}_{i_idx}"):
+                    if a_qtd < m_qtd:
+                      item["qtd_separada"] += 1
+                      st.rerun()
+                with b_col2:
+                  if st.button("➖", key=f"menos_{pid}_{i_idx}"):
+                    if a_qtd > 0:
+                      item["qtd_separada"] -= 1
+                      st.rerun()
+
+            if a_qtd < m_qtd:
+              todos_ok = False
+
+          st.markdown("<br>", unsafe_allow_html=True)
+
+          if pdata["concluido"]:
+            st.success(
+                "✅ **Pedido Finalizado:** Os itens foram removidos com sucesso"
+                " dos respetivos setores e registados no histórico."
+            )
+          elif not todos_ok:
+            st.warning(
+                "⚠️ Separação em andamento. Leia os códigos de barras no setor"
+                " correspondente ou use os botões."
+            )
+          else:
+            if "Automática" in modo_baixa:
+              sucesso = executar_baixa_pedido(pid, pdata)
+              if sucesso:
+                st.success(
+                    "⚡ **Baixa Automática por Setor Concluída!** Os itens foram"
+                    " retirados dos seus setores de origem."
+                )
+                st.rerun()
+            else:
+              st.success(
+                  "✨ **Todos os itens separados (Verde)!** Pronto para"
+                  " conferência."
+              )
+              if st.button(
+                  f"📥 Confirmar e Dar Baixa Manual nos Setores ({pid})",
+                  key=f"baixar_{pid}",
+                  type="primary",
+              ):
+                sucesso = executar_baixa_pedido(pid, pdata)
+                if sucesso:
+                  st.success(
+                      "✅ Baixa manual efetuada com sucesso nos setores de"
+                      " origem!"
+                  )
+                  st.rerun()
+
+
+# --- 5. MENSAGENS ---
+elif menu.startswith("💬 Mensagens"):
+  st.markdown("## 💬 Central de Mensagens")
+  dest = st.selectbox(
+      "Para",
+      [
+          u
+          for u in st.session_state.users.keys()
+          if u != st.session_state.username
+      ],
+  )
+  txt = st.text_area("Mensagem")
+  if st.button("Enviar"):
+    st.session_state.mensagens.append({
+        "de": st.session_state.username,
+        "para": dest,
+        "texto": txt,
+        "data": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "lida": False,
+    })
+    st.success("Enviado!")
+
+
+# --- 6. RELATÓRIOS ---
+elif menu == "📊 Romaneios & Relatórios":
+  st.markdown("## 📊 Relatórios & Romaneios")
+  if st.button("Descarregar CSV do Stock"):
+    csv = df.to_csv(index=False).encode("utf-8")
+    st.download_button(
+        "Baixar Ficheiro", csv, "estoque_rbm.csv", "text/csv"
+    )
+
+
+# --- 7. HISTÓRICO ---
+elif menu == "📜 Histórico de Auditoria":
+  st.markdown("## 📜 Histórico de Atividades")
+  st.dataframe(st.session_state.historico, use_container_width=True)
