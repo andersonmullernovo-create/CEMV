@@ -1,6 +1,7 @@
 import datetime
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 # Configuração da página orientada ao setor alimentício
 st.set_page_config(
@@ -85,20 +86,35 @@ if "estoque" not in st.session_state:
       "Modificado_Por": ["admin", "operador", "admin"],
   })
 
-# Aplicar estilo visual dinâmico & bloqueio de menu de toque longo no telemóvel
+# Capturar código vindo do leitor ótico da câmara em tempo real
+if "scanned_code" in st.query_params:
+  st.session_state["codigo_lido_ativo"] = st.query_params["scanned_code"]
+  st.query_params.clear()
+  st.rerun()
+
+# Aplicar estilo visual dinâmico & bloqueio total de menu de toque longo do Android
 cfg = st.session_state.config_visual
 st.markdown(
     f"""
     <style>
+    /* Desativa completamente o menu de toque longo / popup do Android */
+    * {{
+        -webkit-touch-callout: none !important;
+        -webkit-user-select: none !important;
+        user-select: none !important;
+    }}
+    /* Permite seleção e escrita normal apenas em caixas de texto */
+    input, textarea, select {{
+        -webkit-user-select: text !important;
+        user-select: text !important;
+    }}
     html, body, [class*="css"] {{
         font-size: {cfg['tamanho_fonte']} !important;
         color: {cfg['cor_texto']} !important;
-        -webkit-touch-callout: none !important; /* Desativa menu de toque longo em iOS e Android */
     }}
     .stApp {{
         background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         background-attachment: fixed;
-        -webkit-touch-callout: none !important;
     }}
     .stDataFrame {{
         background-color: {cfg['cor_fundo_tabela']} !important;
@@ -399,7 +415,7 @@ elif menu == "🍲 Consultar Stock & Setores":
 
 # --- 3. ENTRADAS E SAÍDAS ---
 elif menu == "➕ Entradas / Saídas (Expedição)":
-  st.markdown("## ➕ Entradas, Saídas e Leitura Ativa por Botão")
+  st.markdown("## ➕ Entradas, Saídas e Leitura por Câmara (Tempo Real)")
 
   if not permissoes_atuais["pode_movimentar"]:
     st.error("Sem permissão para movimentar stock.")
@@ -479,7 +495,8 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           "Método de Identificação",
           [
               "Selecionar na Lista",
-              "🎯 Leitura Ativa por Botão (Scanner / Teclado)",
+              "📷 Leitor Ótico com Câmara Traseira (Tempo Real)",
+              "Digitar Código de Barras",
           ],
           horizontal=True,
       )
@@ -490,39 +507,88 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
         produto_selecionado = st.selectbox(
             "Produto", df["Produto"].tolist(), key="sel_mov_l"
         )
-      else:
+      elif modo_mov == "📷 Leitor Ótico com Câmara Traseira (Tempo Real)":
         st.markdown(
-            "💡 **Instruções:** Insira o código de barras ou use o leitor"
-            " ótico e clique no botão **'Disparar Leitura'** para validar."
-        )
-        codigo_digitado = st.text_input(
-            "Código de Barras",
-            placeholder="Ex: 789101",
-            key="input_codigo_entrada_manual",
+            "💡 Clique abaixo para abrir a câmara traseira. Ao apontar para"
+            " a etiqueta, o código será lido instantaneamente:"
         )
 
-        if st.button(
-            "🎯 Disparar Leitura da Etiqueta", type="primary", key="btn_disparar_ent"
-        ):
-          if codigo_digitado:
-            match = df[df["Codigo_Barras"] == codigo_digitado.strip()]
-            if not match.empty:
-              st.session_state["produto_lido_ativo"] = match.iloc[0]["Produto"]
-              st.success(
-                  f"✔️ Produto detetado com sucesso:"
-                  f" **{st.session_state['produto_lido_ativo']}** (Setor:"
-                  f" {match.iloc[0]['Setor']})"
-              )
-            else:
-              st.error("⚠️ Código de barras não encontrado no stock.")
-          else:
-            st.warning("Por favor, digite ou passe o leitor no código.")
+        # HTML Component com Leitor de Código em Tempo Real via html5-qrcode
+        scanner_html = """
+            <div style="text-align: center; background: #f8f9fa; padding: 15px; border-radius: 12px; border: 1px solid #ddd;">
+                <div id="reader" style="width:100%; max-width:320px; margin:auto; border-radius: 8px; overflow: hidden;"></div>
+                <br>
+                <button id="start-btn" onclick="startScanner()" style="width:100%; padding:14px; background:#28a745; color:white; border:none; border-radius:8px; font-weight:bold; font-size:16px; cursor:pointer;">📸 Ligar Câmara Traseira</button>
+                <button id="stop-btn" onclick="stopScanner()" style="display:none; width:100%; padding:14px; background:#dc3545; color:white; border:none; border-radius:8px; font-weight:bold; font-size:16px; cursor:pointer; margin-top:10px;">🛑 Desligar Câmara</button>
+            </div>
+            <script src="https://unpkg.com/html5-qrcode"></script>
+            <script>
+            let html5QrCode = null;
 
-        produto_selecionado = st.session_state.get("produto_lido_ativo", None)
-        if produto_selecionado:
-          st.info(
-              f"📌 Produto Ativo para Movimento: **{produto_selecionado}**"
+            function startScanner() {
+                document.getElementById('start-btn').style.display = 'none';
+                document.getElementById('stop-btn').style.display = 'block';
+                
+                html5QrCode = new Html5Qrcode("reader");
+                html5QrCode.start(
+                    { facingMode: "environment" },
+                    { fps: 15, qrbox: { width: 250, height: 120 } },
+                    (decodedText, decodedResult) => {
+                        html5QrCode.stop().then(() => {
+                            window.parent.location.search = '?scanned_code=' + encodeURIComponent(decodedText);
+                        }).catch(err => {
+                            window.parent.location.search = '?scanned_code=' + encodeURIComponent(decodedText);
+                        });
+                    },
+                    (errorMessage) => {}
+                ).catch(err => {
+                    alert("Erro ao aceder à câmara: " + err);
+                    document.getElementById('start-btn').style.display = 'block';
+                    document.getElementById('stop-btn').style.display = 'none';
+                });
+            }
+
+            function stopScanner() {
+                if (html5QrCode) {
+                    html5QrCode.stop().then(() => {
+                        document.getElementById('start-btn').style.display = 'block';
+                        document.getElementById('stop-btn').style.display = 'none';
+                    }).catch(err => { console.log(err); });
+                }
+            }
+            </script>
+            """
+        components.html(scanner_html, height=420)
+
+        # Verificar se veio código lido pela câmara
+        cod_lido = st.session_state.get("codigo_lido_ativo", "")
+        if cod_lido:
+          st.success(
+              f"✔️ Código detetado pela câmara: **{cod_lido}**"
           )
+          match = df[df["Codigo_Barras"] == cod_lido.strip()]
+          if not match.empty:
+            produto_selecionado = match.iloc[0]["Produto"]
+            st.success(
+                f"🎯 Produto Encontrado: **{produto_selecionado}** (Setor:"
+                f" {match.iloc[0]['Setor']})"
+            )
+          else:
+            st.error("⚠️ Código de barras detetado não consta no stock.")
+      else:
+        bc = st.text_input(
+            "Digite o Código de Barras", placeholder="Ex: 789101..."
+        )
+        if bc:
+          match = df[df["Codigo_Barras"] == bc]
+          if not match.empty:
+            produto_selecionado = match.iloc[0]["Produto"]
+            st.success(
+                f"Encontrado: **{produto_selecionado}** (Setor:"
+                f" {match.iloc[0]['Setor']})"
+            )
+          else:
+            st.error("Código de barras não registado no sistema.")
 
       if produto_selecionado:
         st.markdown("---")
@@ -586,16 +652,16 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           st.success(
               f"Operação de {acao} registada com sucesso no setor **{setor_reg}**!"
           )
-          if "produto_lido_ativo" in st.session_state:
-            del st.session_state["produto_lido_ativo"]
+          if "codigo_lido_ativo" in st.session_state:
+            del st.session_state["codigo_lido_ativo"]
 
 
 # --- 4. GESTÃO DE PEDIDOS & CHECK-LIST ---
 elif menu == "📋 Gestão de Pedidos & Check-list":
   st.markdown("## 📋 Setor de Separação de Pedidos & Check-list")
   st.markdown(
-      "Importe o talão, gere o pedido e separe os itens utilizando o botão"
-      " de leitura ativa."
+      "Importe o talão, gere o pedido e separe os itens com leitor ótico ou"
+      " câmara."
   )
 
   sub_tab1, sub_tab2 = st.tabs([
@@ -633,7 +699,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       st.markdown("---")
       st.info(
           "⚡ **Atalho de Importação:** Clique no botão abaixo para carregar"
-          " automaticamente todos os 22 itens do talão da Neriah[span_0](start_span)[span_0](end_span)."
+          " automaticamente todos os 22 itens do talão da Neriah[span_1](start_span)[span_1](end_span)."
       )
       if st.button(
           "⚡ [Importação Automática] Carregar Itens do Talão da Neriah",
@@ -820,21 +886,13 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                 horizontal=True,
             )
 
-            col_s1, col_s2 = st.columns([3, 1])
-            with col_s1:
-              codigo_sep_input = st.text_input(
-                  f"🔍 Código de Barras do Item ({pid})",
-                  key=f"input_sep_codigo_{pid}",
-                  placeholder="Passe a etiqueta ou digite...",
-              )
-            with col_s2:
-              st.markdown("<br>", unsafe_allow_html=True)
-              processar_clique = st.button(
-                  "🎯 Ler", key=f"btn_ler_sep_{pid}", type="primary"
-              )
-
-            if processar_clique and codigo_sep_input:
-              match_bar = df[df["Codigo_Barras"] == codigo_sep_input.strip()]
+            scan_codigo = st.text_input(
+                f"🔍 Código de Barras / Leitor ({pid})",
+                key=f"input_sep_codigo_{pid}",
+                placeholder="Passe o leitor ou digite...",
+            )
+            if scan_codigo:
+              match_bar = df[df["Codigo_Barras"] == scan_codigo.strip()]
               if not match_bar.empty:
                 nome_prod_encontrado = match_bar.iloc[0]["Produto"]
                 setor_encontrado = match_bar.iloc[0]["Setor"]
@@ -922,8 +980,8 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
             )
           elif not todos_ok:
             st.warning(
-                "⚠️ Separação em andamento. Passe a etiqueta e clique em"
-                " 'Ler' ou use os botões."
+                "⚠️ Separação em andamento. Leia os códigos de barras no setor"
+                " correspondente ou use os botões."
             )
           else:
             if "Automática" in modo_baixa:
