@@ -465,7 +465,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           st.success("Movimento registado com sucesso!")
 
 
-# --- 4. GESTÃO DE PEDIDOS & CHECK-LIST (Com Janela Dedicada de Pedidos Gerados) ---
+# --- 4. GESTÃO DE PEDIDOS & CHECK-LIST ---
 elif menu == "📋 Gestão de Pedidos & Check-list":
   st.markdown("## 📋 Setor de Separação de Pedidos & Check-list")
   st.markdown(
@@ -473,7 +473,6 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       " gerencie a separação."
   )
 
-  # Sistema de Abas Internas para alternar entre "Criar Novo Pedido" e "Ver Pedidos Salvos"
   sub_tab1, sub_tab2 = st.tabs([
       "📸 Criar Novo Pedido (Câmara / Manual)",
       "📦 Ver Pedidos Salvos & Ativos",
@@ -557,7 +556,6 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
           st.write(f"- {it['produto']}: **{it['qtd']} un**")
 
         st.markdown("<br>", unsafe_allow_html=True)
-        # BOTÃO EXPLICITO PARA GERAR O PEDIDO E ABRIR A JANELA DE SEPARAÇÃO
         if st.button(
             "🚀 Gerar Pedido e Abrir Janela de Separação", type="primary"
         ):
@@ -596,9 +594,56 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
           " aba ao lado."
       )
     else:
+
+      def executar_baixa_pedido(pid_alvo, dados_pedido):
+        erro_stk = False
+        itens_para_abater = []
+        for item in dados_pedido["itens"]:
+          p_n = item["produto"]
+          q_s = item["qtd_pedida"]
+          match_stk = df[df["Produto"] == p_n]
+          if not match_stk.empty:
+            r_idx = match_stk.index[0]
+            if df.loc[r_idx, "Quantidade"] >= q_s:
+              itens_para_abater.append((r_idx, p_n, q_s))
+            else:
+              erro_stk = True
+              st.error(
+                  f"⚠️ Stock insuficiente para **{p_n}** (Disponível:"
+                  f" {df.loc[r_idx, 'Quantidade']}, Pedido: {q_s})!"
+              )
+          else:
+            # Se for item manual sem registo no stock principal, ignoramos o abate físico ou tratamos como aviso
+            pass
+
+        if not erro_stk:
+          data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+          for r_idx, p_n, q_s in itens_para_abater:
+            df.loc[r_idx, "Quantidade"] -= q_s
+            df.loc[r_idx, "Ultima_Modificacao"] = data_atual
+            df.loc[r_idx, "Modificado_Por"] = st.session_state.username
+
+            nova_hist = pd.DataFrame(
+                [[
+                    data_atual,
+                    st.session_state.username,
+                    f"Expedição ({pid_alvo})",
+                    p_n,
+                    q_s,
+                ]],
+                columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"],
+            )
+            st.session_state.historico = pd.concat(
+                [st.session_state.historico, nova_hist], ignore_index=True
+            )
+
+          dados_pedido["concluido"] = True
+          return True
+        return False
+
       for pid, pdata in st.session_state.pedidos_ativos.items():
         status_txt = (
-            "✅ Concluído (Separado)"
+            "✅ Concluído (Baixa Efetuada)"
             if pdata["concluido"]
             else "⏳ Em Andamento (Separação)"
         )
@@ -609,40 +654,48 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
             f" (Criado em: {data_criacao})",
             expanded=not pdata["concluido"],
         ):
+          if not pdata["concluido"]:
+            modo_baixa = st.radio(
+                "⚙️ Modo de Baixa no Stock:",
+                [
+                    "Automática (ao concluir 100% da separação)",
+                    "Manual (confirmar por botão no final)",
+                ],
+                key=f"modo_baixa_{pid}",
+                horizontal=True,
+            )
 
-          # Leitor de código de barras para dar baixa item a item
-          scan_codigo = st.text_input(
-              f"🔍 Escanear Código de Barras do Produto ({pid})",
-              key=f"scan_sep_{pid}",
-              placeholder="Passe o leitor de barras para separar 1 unidade...",
-          )
-          if scan_codigo:
-            match_bar = df[df["Codigo_Barras"] == scan_codigo]
-            if not match_bar.empty:
-              nome_prod_encontrado = match_bar.iloc[0]["Produto"]
-              achou_no_pedido = False
-              for itm in pdata["itens"]:
-                if itm["produto"] == nome_prod_encontrado:
-                  achou_no_pedido = True
-                  if itm["qtd_separada"] < itm["qtd_pedida"]:
-                    itm["qtd_separada"] += 1
-                    st.success(
-                        f"✔️ Separado 1 unidade de {nome_prod_encontrado}! Progresso:"
-                        f" {itm['qtd_separada']}/{itm['qtd_pedida']}"
-                    )
-                    st.rerun()
-                  else:
-                    st.warning(
-                        f"O item {nome_prod_encontrado} já está completo neste"
-                        " pedido!"
-                    )
-              if not achou_no_pedido:
-                st.error(
-                    f"O produto '{nome_prod_encontrado}' não pertence a este"
-                    " pedido!"
-                )
-            else:
-              st.error("Código de barras desconhecido!")
+            scan_codigo = st.text_input(
+                f"🔍 Escanear Código de Barras do Produto ({pid})",
+                key=f"scan_sep_{pid}",
+                placeholder="Passe o leitor de barras para separar 1 unidade...",
+            )
+            if scan_codigo:
+              match_bar = df[df["Codigo_Barras"] == scan_codigo]
+              if not match_bar.empty:
+                nome_prod_encontrado = match_bar.iloc[0]["Produto"]
+                achou_no_pedido = False
+                for itm in pdata["itens"]:
+                  if itm["produto"] == nome_prod_encontrado:
+                    achou_no_pedido = True
+                    if itm["qtd_separada"] < itm["qtd_pedida"]:
+                      itm["qtd_separada"] += 1
+                      st.toast(
+                          f"✔️ +1 {nome_prod_encontrado}"
+                          f" ({itm['qtd_separada']}/{itm['qtd_pedida']})"
+                      )
+                    else:
+                      st.warning(
+                          f"O item {nome_prod_encontrado} já está completo neste"
+                          " pedido!"
+                      )
+                if not achou_no_pedido:
+                  st.error(
+                      f"O produto '{nome_prod_encontrado}' não pertence a este"
+                      " pedido!"
+                  )
+              else:
+                st.error("Código de barras desconhecido!")
 
           st.markdown("---")
           todos_ok = True
@@ -666,55 +719,62 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
               )
             with col2:
               st.markdown(
-                  f"<span style='{estilo_cor}'>Separado: **{a_qtd}/{m_qtd}**</span>",
+                  f"<span style='{estilo_cor}'>Separado:"
+                  f" **{a_qtd}/{m_qtd}**</span>",
                   unsafe_allow_html=True,
               )
             with col3:
-              b_mais = st.button("➕", key=f"mais_{pid}_{i_idx}")
-              b_menos = st.button("➖", key=f"menos_{pid}_{i_idx}")
-              if b_mais and a_qtd < m_qtd:
-                item["qtd_separada"] += 1
-                st.rerun()
-              if b_menos and a_qtd > 0:
-                item["qtd_separada"] -= 1
-                st.rerun()
+              if not pdata["concluido"]:
+                b_col1, b_col2 = st.columns(2)
+                with b_col1:
+                  if st.button("➕", key=f"mais_{pid}_{i_idx}"):
+                    if a_qtd < m_qtd:
+                      item["qtd_separada"] += 1
+                      st.rerun()
+                with b_col2:
+                  if st.button("➖", key=f"menos_{pid}_{i_idx}"):
+                    if a_qtd > 0:
+                      item["qtd_separada"] -= 1
+                      st.rerun()
 
             if a_qtd < m_qtd:
               todos_ok = False
 
           st.markdown("<br>", unsafe_allow_html=True)
-          if not todos_ok:
+
+          if pdata["concluido"]:
+            st.success(
+                "✅ **Pedido Finalizado:** Os itens já foram descontados do"
+                " stock e registados no histórico."
+            )
+          elif not todos_ok:
             st.warning(
                 "⚠️ Separação em andamento. Escaneie os códigos de barras ou"
                 " utilize os botões manuais."
             )
           else:
-            st.success(
-                "✨ **Todos os itens deste pedido foram separados com sucesso"
-                " (Verde)!**"
-            )
-            if not pdata["concluido"]:
+            if "Automática" in modo_baixa:
+              sucesso = executar_baixa_pedido(pid, pdata)
+              if sucesso:
+                st.success(
+                    "⚡ **Baixa Automática Concluída!** Todos os itens atingiram"
+                    " 100% e foram abatidos do stock."
+                )
+                st.rerun()
+            else:
+              st.success(
+                  "✨ **Todos os itens separados (Verde)!** Pronto para"
+                  " conferência."
+              )
               if st.button(
-                  f"📥 Confirmar e Dar Baixa Definitiva no Stock ({pid})",
+                  f"📥 Confirmar e Dar Baixa Manual no Stock ({pid})",
                   key=f"baixar_{pid}",
+                  type="primary",
               ):
-                erro_stk = False
-                for item in pdata["itens"]:
-                  p_n = item["produto"]
-                  q_s = item["qtd_pedida"]
-                  match_stk = df[df["Produto"] == p_n]
-                  if not match_stk.empty:
-                    r_idx = match_stk.index[0]
-                    if df.loc[r_idx, "Quantidade"] >= q_s:
-                      df.loc[r_idx, "Quantidade"] -= q_s
-                    else:
-                      erro_stk = True
-                      st.error(f"Stock insuficiente para {p_n}!")
-
-                if not erro_stk:
-                  pdata["concluido"] = True
+                sucesso = executar_baixa_pedido(pid, pdata)
+                if sucesso:
                   st.success(
-                      "Baixa de stock efetuada com sucesso para todo o pedido!"
+                      "✅ Baixa manual efetuada com sucesso no stock geral!"
                   )
                   st.rerun()
 
