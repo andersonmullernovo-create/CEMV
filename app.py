@@ -165,13 +165,10 @@ if st.sidebar.button("Terminar Sessão"):
 
 df = st.session_state.estoque
 
-# --- 1. PAINEL DO ADMINISTRADOR (Visual Moderno) ---
+# --- 1. PAINEL DO ADMINISTRADOR ---
 if menu == "⚙️ Painel do Administrador & Agenda":
   st.markdown("## ⚙️ Painel de Controlo do Administrador")
-  st.markdown(
-      "Gestão centralizada de acessos, setores, calendário, edição rápida de"
-      " dados e personalização."
-  )
+  st.markdown("Gestão centralizada de acessos, setores, calendário e edição.")
 
   tab_adm1, tab_adm2, tab_adm3, tab_adm4, tab_adm5 = st.tabs([
       "👥 Utilizadores & Permissões",
@@ -184,23 +181,19 @@ if menu == "⚙️ Painel do Administrador & Agenda":
   with tab_adm1:
     with st.container(border=True):
       st.subheader("Registar ou Modificar Utilizador")
-      novo_user = st.text_input(
-          "Nome do Utilizador", placeholder="Ex: joao.silva"
-      )
+      novo_user = st.text_input("Nome do Utilizador")
       nova_senha = st.text_input("Senha de Acesso", type="password")
-      novo_perfil = st.selectbox(
-          "Perfil de Acesso", ["Operador", "Administrador"]
-      )
+      novo_perfil = st.selectbox("Perfil", ["Operador", "Administrador"])
 
-      col_perm1, col_perm2, col_perm3 = st.columns(3)
-      with col_perm1:
-        pode_cad = st.checkbox("Pode Cadastrar Itens", value=True)
-      with col_perm2:
-        pode_exc = st.checkbox("Pode Excluir Itens", value=False)
-      with col_perm3:
-        pode_mov = st.checkbox("Pode Movimentar Stock", value=True)
+      col_p1, col_p2, col_p3 = st.columns(3)
+      with col_p1:
+        pode_cad = st.checkbox("Pode Cadastrar", value=True)
+      with col_p2:
+        pode_exc = st.checkbox("Pode Excluir", value=False)
+      with col_p3:
+        pode_mov = st.checkbox("Pode Movimentar", value=True)
 
-      if st.button("💾 Guardar / Registar Utilizador"):
+      if st.button("Guardar Utilizador"):
         if novo_user and nova_senha:
           st.session_state.users[novo_user] = {
               "senha": nova_senha,
@@ -209,267 +202,129 @@ if menu == "⚙️ Painel do Administrador & Agenda":
               "pode_excluir": pode_exc,
               "pode_movimentar": pode_mov,
           }
-          st.success(f"Utilizador '{novo_user}' guardado com sucesso!")
+          st.success(f"Utilizador '{novo_user}' guardado!")
         else:
           st.error("Preencha o nome e a senha.")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader("Utilizadores Atuais & Controlo")
+    st.subheader("Utilizadores Atuais")
     for u, dados in list(st.session_state.users.items()):
       with st.container(border=True):
         c1, c2 = st.columns([3, 1])
         with c1:
-          st.write(f"👤 **{u}** — Perfil: *{dados['perfil']}*")
+          st.write(f"👤 **{u}** ({dados['perfil']})")
         with c2:
           if u != "admin":
-            if st.button(f"🗑️ Excluir #{u}", key=f"del_user_{u}"):
+            if st.button(f"Excluir #{u}", key=f"del_u_{u}"):
               del st.session_state.users[u]
-              st.success(f"Utilizador {u} eliminado!")
               st.rerun()
 
   with tab_adm2:
     with st.container(border=True):
-      st.subheader("Gestão de Setores de Armazenamento")
-      novo_setor = st.text_input(
-          "Nome do Novo Setor",
-          key="input_novo_setor_adm",
-          placeholder="Ex: Câmara de Congelados",
-      )
-
-      if st.button("➕ Adicionar Setor"):
+      st.subheader("Gestão de Setores")
+      novo_setor = st.text_input("Nome do Novo Setor", key="in_setor")
+      if st.button("Adicionar Setor"):
         if novo_setor and novo_setor.strip():
           if novo_setor.strip() not in st.session_state.setores:
             st.session_state.setores.append(novo_setor.strip())
-            st.success(f"Setor '{novo_setor.strip()}' criado com sucesso!")
+            st.success("Setor criado!")
             st.rerun()
           else:
-            st.error("Este setor já existe!")
+            st.error("Já existe.")
         else:
-          st.error("Insira um nome válido.")
+          st.error("Nome inválido.")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader("Setores Atuais")
     for s in list(st.session_state.setores):
       with st.container(border=True):
         c1, c2 = st.columns([3, 1])
         with c1:
-          st.write(f"🏭 **{s}**")
+          st.write(f"🏭 {s}")
         with c2:
           if len(st.session_state.setores) > 1:
-            if st.button(f"Excluir", key=f"del_setor_{s}"):
+            if st.button("Excluir", key=f"del_s_{s}"):
               st.session_state.setores.remove(s)
-              st.success(f"Setor {s} removido!")
               st.rerun()
-          else:
-            st.caption("Mínimo 1 setor")
 
   with tab_adm3:
     with st.container(border=True):
-      st.subheader("📅 Calendário & Agenda de Eventos")
-      data_evento = st.date_input("Data do Evento")
-      desc_evento = st.text_input(
-          "Descrição do Evento", placeholder="Ex: Inventário geral do armazém"
-      )
-
-      if st.button("📌 Adicionar Evento à Agenda"):
+      st.subheader("📅 Agenda")
+      data_evento = st.date_input("Data")
+      desc_evento = st.text_input("Descrição")
+      if st.button("Adicionar Evento"):
         if desc_evento:
           st.session_state.agenda_eventos.append(
               {"data": str(data_evento), "evento": desc_evento}
           )
-          st.success("Evento adicionado com sucesso!")
-        else:
-          st.error("Escreva a descrição do evento.")
-
+          st.success("Adicionado!")
     st.markdown("<br>", unsafe_allow_html=True)
-    st.subheader("Eventos Agendados")
-    if not st.session_state.agenda_eventos:
-      st.info("Nenhum evento agendado.")
-    else:
-      for ev in st.session_state.agenda_eventos:
-        st.markdown(f"- 📅 **{ev['data']}**: {ev['evento']}")
+    for ev in st.session_state.agenda_eventos:
+      st.write(f"📅 **{ev['data']}**: {ev['evento']}")
 
   with tab_adm4:
     with st.container(border=True):
-      st.subheader("✏️ Edição Rápida de Dados Cadastrados")
+      st.subheader("✏️ Edição Rápida de Itens")
       prod_editar = st.selectbox(
-          "Selecione o produto para editar detalhes",
-          df["Produto"].tolist(),
-          key="sel_edit_prod",
+          "Selecione", df["Produto"].tolist(), key="sel_ed"
       )
-
       if prod_editar:
         idx_ed = df[df["Produto"] == prod_editar].index[0]
-        col_e1, col_e2 = st.columns(2)
-        with col_e1:
-          novo_nome_ed = st.text_input(
-              "Nome do Produto",
-              value=df.loc[idx_ed, "Produto"],
-              key="ed_nome",
-          )
-          novo_desc_ed = st.text_area(
-              "Descrição", value=df.loc[idx_ed, "Descricao"], key="ed_desc"
-          )
-          novo_emb_ed = st.number_input(
-              "Unidades por Embalagem",
-              min_value=1,
-              value=int(df.loc[idx_ed, "Unidades_Embalagem"]),
-              key="ed_emb",
-          )
-        with col_e2:
-          tipos_disp = ["Matéria-Prima", "Produto Acabado", "Insumo", "Embalagem"]
-          tipo_atual = df.loc[idx_ed, "Tipo_Item"]
-          idx_tipo = (
-              tipos_disp.index(tipo_atual) if tipo_atual in tipos_disp else 0
-          )
-          novo_tipo_ed = st.selectbox(
-              "Tipo de Item", tipos_disp, index=idx_tipo, key="ed_tipo"
-          )
-
-          setor_atual = df.loc[idx_ed, "Setor"]
-          idx_setor = (
-              st.session_state.setores.index(setor_atual)
-              if setor_atual in st.session_state.setores
-              else 0
-          )
-          novo_setor_ed = st.selectbox(
-              "Setor", st.session_state.setores, index=idx_setor, key="ed_setor"
-          )
-
-          novo_min_ed = st.number_input(
-              "Limite Mínimo",
-              min_value=0,
-              value=int(df.loc[idx_ed, "Limite_Minimo"]),
-              key="ed_min",
-          )
-
-        if st.button("💾 Guardar Alterações do Item"):
-          df.loc[idx_ed, "Produto"] = novo_nome_ed
-          df.loc[idx_ed, "Descricao"] = novo_desc_ed
-          df.loc[idx_ed, "Unidades_Embalagem"] = novo_emb_ed
-          df.loc[idx_ed, "Tipo_Item"] = novo_tipo_ed
-          df.loc[idx_ed, "Setor"] = novo_setor_ed
-          df.loc[idx_ed, "Limite_Minimo"] = novo_min_ed
-          df.loc[idx_ed, "Ultima_Modificacao"] = datetime.datetime.now().strftime(
-              "%Y-%m-%d %H:%M"
-          )
-          df.loc[idx_ed, "Modificado_Por"] = st.session_state.username
-          st.success(f"Item '{novo_nome_ed}' atualizado com sucesso!")
+        nn = st.text_input("Nome", value=df.loc[idx_ed, "Produto"], key="ed_n")
+        nd = st.text_area(
+            "Descrição", value=df.loc[idx_ed, "Descricao"], key="ed_d"
+        )
+        ne = st.number_input(
+            "Embalagem",
+            min_value=1,
+            value=int(df.loc[idx_ed, "Unidades_Embalagem"]),
+            key="ed_e",
+        )
+        nm = st.number_input(
+            "Mínimo",
+            min_value=0,
+            value=int(df.loc[idx_ed, "Limite_Minimo"]),
+            key="ed_m",
+        )
+        if st.button("Guardar Alterações"):
+          df.loc[idx_ed, "Produto"] = nn
+          df.loc[idx_ed, "Descricao"] = nd
+          df.loc[idx_ed, "Unidades_Embalagem"] = ne
+          df.loc[idx_ed, "Limite_Minimo"] = nm
+          st.success("Atualizado!")
           st.rerun()
 
   with tab_adm5:
     with st.container(border=True):
-      st.subheader("🎨 Personalização Visual")
-      tamanho_escolhido = st.selectbox(
-          "Tamanho da Fonte", ["14px", "16px", "18px"], index=1
+      st.subheader("🎨 Estilo & Eliminação")
+      prod_ex = st.selectbox(
+          "Eliminar Produto", df["Produto"].tolist(), key="ex_p"
       )
-      cor_texto_escolhida = st.color_picker(
-          "Cor Principal do Texto", cfg["cor_texto"]
-      )
-      cor_tabela_escolhida = st.color_picker(
-          "Cor Fundo Tabelas", cfg["cor_fundo_tabela"]
-      )
-
-      if st.button("Aplicar Estilo Visual"):
-        st.session_state.config_visual["tamanho_fonte"] = tamanho_escolhido
-        st.session_state.config_visual["cor_texto"] = cor_texto_escolhida
-        st.session_state.config_visual["cor_fundo_tabela"] = (
-            cor_tabela_escolhida
-        )
-        st.success("Estilo atualizado com sucesso!")
-        st.rerun()
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    with st.container(border=True):
-      st.subheader("🗑️ Eliminar Item do Stock")
-      produto_a_excluir = st.selectbox(
-          "Selecione o produto a remover permanentemente",
-          df["Produto"].tolist(),
-          key="excluir_prod",
-      )
-
-      if st.button("❌ Confirmar Eliminação do Produto", type="primary"):
-        idx_excluir = df[df["Produto"] == produto_a_excluir].index[0]
-        st.session_state.estoque = df.drop(idx_excluir).reset_index(drop=True)
-        st.success("Produto eliminado com sucesso!")
-        st.rerun()
+      if st.button("Confirmar Eliminação"):
+        st.session_state.estoque = df[
+            df["Produto"] != prod_ex
+        ].reset_index(drop=True)
+        pages = st.rerun()
 
 
-# --- 2. CONSULTAR STOCK & SETORES (Visual Moderno & Cartões) ---
+# --- 2. CONSULTAR STOCK ---
 elif menu == "🍲 Consultar Stock & Setores":
-  st.markdown("## 🍲 Gestão e Consulta de Stock")
-  st.markdown(
-      "Consulte em tempo real os níveis de stock, validades e distribuição por"
-      " setor."
+  st.markdown("## 🍲 Consulta de Stock")
+  setor_filtro = st.selectbox(
+      "Setor", ["Todos os Setores"] + st.session_state.setores
   )
+  pesquisa = st.text_input("🔍 Pesquisar", "")
 
-  total_produtos = len(df)
-  total_itens_stock = df["Quantidade"].sum()
-  produtos_criticos = len(df[df["Quantidade"] <= df["Limite_Minimo"]])
-
-  col_m1, col_m2, col_m3 = st.columns(3)
-
-  with col_m1:
-    st.markdown(
-        f"""
-        <div style="background-color: #f8f9fa; padding: 18px; border-radius: 10px; border-left: 5px solid #ff4b4b; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-            <p style="margin: 0; color: #555; font-size: 14px; font-weight: 600;">TOTAL DE PRODUTOS</p>
-            <h3 style="margin: 5px 0 0 0; color: #111; font-size: 24px;">{total_produtos}</h3>
-        </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
-  with col_m2:
-    st.markdown(
-        f"""
-        <div style="background-color: #f8f9fa; padding: 18px; border-radius: 10px; border-left: 5px solid #ffa500; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-            <p style="margin: 0; color: #555; font-size: 14px; font-weight: 600;">UNIDADES EM STOCK</p>
-            <h3 style="margin: 5px 0 0 0; color: #111; font-size: 24px;">{total_itens_stock} un</h3>
-        </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
-  with col_m3:
-    st.markdown(
-        f"""
-        <div style="background-color: #f8f9fa; padding: 18px; border-radius: 10px; border-left: 5px solid #dc3545; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-            <p style="margin: 0; color: #555; font-size: 14px; font-weight: 600;">ITENS EM ALERTA (MÍNIMO)</p>
-            <h3 style="margin: 5px 0 0 0; color: #dc3545; font-size: 24px;">{produtos_criticos}</h3>
-        </div>
-    """,
-        unsafe_allow_html=True,
-    )
-
-  st.markdown("<br>", unsafe_allow_html=True)
-
-  with st.container(border=True):
-    st.subheader("🔍 Painel de Filtros e Pesquisa")
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-      setor_filtro = st.selectbox(
-          "Filtrar por Setor", ["Todos os Setores"] + st.session_state.setores
-      )
-    with col_f2:
-      pesquisa = st.text_input(
-          "Pesquisar por Alimento ou Código de Barras",
-          placeholder="Digite para filtrar...",
-      )
-
-  df_filtrado = df.copy()
+  df_f = df.copy()
   if setor_filtro != "Todos os Setores":
-    df_filtrado = df_filtrado[df_filtrado["Setor"] == setor_filtro]
-
+    df_f = df_f[df_f["Setor"] == setor_filtro]
   if pesquisa:
-    df_filtrado = df_filtrado[
-        df_filtrado["Produto"].str.contains(pesquisa, case=False, na=False)
-        | df_filtrado["Codigo_Barras"].str.contains(
-            pesquisa, case=False, na=False
-        )
+    df_f = df_f[
+        df_f["Produto"].str.contains(pesquisa, case=False, na=False)
+        | df_f["Codigo_Barras"].str.contains(pesquisa, case=False, na=False)
     ]
 
 
-  def destacar_estoque_e_validade(row):
+  def estilo_alerta(row):
     hoje = datetime.date.today().strftime("%Y-%m-%d")
     if row["Quantidade"] <= row["Limite_Minimo"] or row["Validade"] <= hoje:
       return [
@@ -478,498 +333,274 @@ elif menu == "🍲 Consultar Stock & Setores":
     return [""] * len(row)
 
 
-  st.markdown("<br>", unsafe_allow_html=True)
-  st.markdown("### 📋 Tabela de Inventário Atualizada")
   st.dataframe(
-      df_filtrado.style.apply(destacar_estoque_e_validade, axis=1),
-      use_container_width=True,
-  )
-  st.caption(
-      "🔴 Itens destacados a vermelho indicam stock abaixo do limite mínimo ou"
-      " validade vencida/próxima."
+      df_f.style.apply(estilo_alerta, axis=1), use_container_width=True
   )
 
 
-# --- 3. ENTRADAS E SAÍDAS (Visual Moderno) ---
+# --- 3. ENTRADAS E SAÍDAS ---
 elif menu == "➕ Entradas / Saídas (Expedição)":
-  st.markdown("## ➕ Registo de Recebimento ou Expedição")
-  st.markdown(
-      "Faça o controlo de entradas de mercadorias ou retiradas de stock para"
-      " expedição."
+  st.markdown("## ➕ Entradas e Saídas")
+  modo_mov = st.radio(
+      "Método", ["Selecionar na Lista", "Bipar Código de Barras"], horizontal=True
   )
-
-  if not permissoes_atuais["pode_movimentar"]:
-    st.error("⚠️ O seu perfil não tem permissão para movimentar stock.")
+  prod_mov = None
+  if modo_mov == "Selecionar na Lista":
+    prod_mov = st.selectbox("Produto", df["Produto"].tolist())
   else:
-    if permissoes_atuais["pode_cadastrar"]:
-      with st.container(border=True):
-        cadastrar_novo = st.checkbox(
-            "➕ O produto não existe? Cadastrar novo item manualmente"
-        )
-        if cadastrar_novo:
-          st.subheader("Registar Novo Item no Catálogo")
-          col_cn1, col_cn2 = st.columns(2)
-          with col_cn1:
-            novo_prod_nome = st.text_input(
-                "Nome do Alimento", placeholder="Ex: Calzone Frango Catupiry"
-            )
-            novo_prod_cod = st.text_input(
-                "Código de Barras", placeholder="Ex: 789..."
-            )
-            novo_prod_desc = st.text_area("Descrição detalhada")
-          with col_cn2:
-            novo_un_emb = st.number_input(
-                "Unidades por Embalagem", min_value=1, value=1
-            )
-            novo_tipo = st.selectbox(
-                "Tipo de Item",
-                ["Matéria-Prima", "Produto Acabado", "Insumo", "Embalagem"],
-            )
-            novo_prod_setor = st.selectbox(
-                "Setor de Armazenamento", st.session_state.setores
-            )
-            novo_limite = st.number_input(
-                "Limite Mínimo de Alerta", min_value=1, value=10
-            )
-
-          if st.button("💾 Guardar Novo Item no Stock"):
-            if novo_prod_nome and novo_prod_cod:
-              nova_linha = pd.DataFrame({
-                  "Codigo_Barras": [novo_prod_cod],
-                  "Produto": [novo_prod_nome],
-                  "Descricao": [novo_prod_desc],
-                  "Unidades_Embalagem": [novo_un_emb],
-                  "Tipo_Item": [novo_tipo],
-                  "Setor": [novo_prod_setor],
-                  "Quantidade": [0],
-                  "Limite_Minimo": [novo_limite],
-                  "Validade": [datetime.date.today().strftime("%Y-%m-%d")],
-                  "Ultima_Modificacao": [
-                      datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-                  ],
-                  "Modificado_Por": [st.session_state.username],
-              })
-              st.session_state.estoque = pd.concat(
-                  [st.session_state.estoque, nova_linha], ignore_index=True
-              )
-              st.success("Produto cadastrado com sucesso!")
-              st.rerun()
-            else:
-              st.error("Preencha o nome e o código de barras do produto.")
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    with st.container(border=True):
-      st.subheader("📦 Registar Movimentação de Stock")
-
-      modo_entrada = st.radio(
-          "Método de Identificação",
-          ["Selecionar na Lista", "Digitar / Bipar Código de Barras"],
-          horizontal=True,
-      )
-
-      produto_selecionado = None
-      if modo_entrada == "Selecionar na Lista":
-        produto_selecionado = st.selectbox(
-            "Selecione o Produto", df["Produto"].tolist()
-        )
+    bc = st.text_input("Bipar Código de Barras")
+    if bc:
+      m = df[df["Codigo_Barras"] == bc]
+      if not m.empty:
+        prod_mov = m.iloc[0]["Produto"]
+        st.success(f"Encontrado: {prod_mov}")
       else:
-        cod_leitor = st.text_input(
-            "Aponte o leitor ou digite o Código de Barras",
-            placeholder="Passe o leitor aqui...",
-        )
-        if cod_leitor:
-          match = df[df["Codigo_Barras"] == cod_leitor]
-          if not match.empty:
-            produto_selecionado = match.iloc[0]["Produto"]
-            st.success(f"Item detetado: **{produto_selecionado}**")
-          else:
-            st.error("Código de barras não registado no sistema!")
+        st.error("Não encontrado.")
 
-      if produto_selecionado:
-        st.markdown("---")
-        tipo_mov = st.radio(
-            "Tipo de Operação",
-            ["Recebimento (Entrada)", "Expedição / Baixa (Retirada)"],
-            horizontal=True,
-        )
-
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-          qtd_mov = st.number_input(
-              "Quantidade a Movimentar", min_value=1, step=1, value=1
-          )
-        with col_m2:
-          nova_validade = (
-              st.date_input("Data de Validade do Lote", datetime.date.today())
-              if "Recebimento" in tipo_mov
-              else None
-          )
-
-        anexo = st.file_uploader(
-            "Anexar Nota Fiscal / Certificado (Opcional)",
-            type=["pdf", "png", "jpg"],
-        )
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        if st.button(
-            "🚀 Confirmar e Registar Operação", use_container_width=True
-        ):
-          idx = df[df["Produto"] == produto_selecionado].index[0]
-          data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-
-          if "Recebimento" in tipo_mov:
-            df.loc[idx, "Quantidade"] += qtd_mov
-            if nova_validade:
-              df.loc[idx, "Validade"] = str(nova_validade)
-            acao = "Recebimento"
-          else:
-            if df.loc[idx, "Quantidade"] >= qtd_mov:
-              df.loc[idx, "Quantidade"] -= qtd_mov
-              acao = "Expedição"
-            else:
-              st.error("⚠️ Stock insuficiente para realizar esta retirada!")
-              st.stop()
-
-          df.loc[idx, "Ultima_Modificacao"] = data_atual
-          df.loc[idx, "Modificado_Por"] = st.session_state.username
-
-          nova_hist = pd.DataFrame(
-              [[
-                  data_atual,
-                  st.session_state.username,
-                  acao,
-                  produto_selecionado,
-                  qtd_mov,
-              ]],
-              columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"],
-          )
-          st.session_state.historico = pd.concat(
-              [st.session_state.historico, nova_hist], ignore_index=True
-          )
-          st.success(f"Operação de {acao} registada com sucesso no sistema!")
+  if prod_mov:
+    tipo_op = st.radio(
+        "Operação", ["Recebimento (Entrada)", "Baixa (Saída)"], horizontal=True
+    )
+    qtd_op = st.number_input("Quantidade", min_value=1, value=1)
+    if st.button("Registar Movimento"):
+      idx = df[df["Produto"] == prod_mov].index[0]
+      if "Recebimento" in tipo_op:
+        df.loc[idx, "Quantidade"] += qtd_op
+      else:
+        if df.loc[idx, "Quantidade"] >= qtd_op:
+          df.loc[idx, "Quantidade"] -= qtd_op
+        else:
+          st.error("Stock insuficiente!")
+          st.stop()
+      st.success("Movimento registado!")
 
 
-# --- 4. GESTÃO DE PEDIDOS & CHECK-LIST (Visual Moderno & Câmara) ---
+# --- 4. GESTÃO DE PEDIDOS & SEPARAÇÃO POR CÂMARA ---
 elif menu == "📋 Gestão de Pedidos & Check-list":
-  st.markdown("## 📋 Gestão de Pedidos e Check-list")
+  st.markdown("## 📋 Setor de Separação de Pedidos")
   st.markdown(
-      "Escanear talões, gerir listas de separação e dar baixa automática no"
-      " stock."
+      "Tire foto do talão do pedido para gerar a lista de separação e escaneie"
+      " os produtos para dar baixa."
   )
 
   with st.container(border=True):
-    st.subheader("📸 1. Registo e Escaneamento de Pedido")
-
-    tipo_captura = st.radio(
-        "Origem da Imagem do Pedido",
-        ["Tirar Foto com a Câmara (Scanner)", "Carregar Ficheiro de Imagem"],
+    st.subheader("📸 1. Criar Pedido via Câmara / Talão")
+    tipo_cap = st.radio(
+        "Origem",
+        ["Tirar Foto com a Câmara (Scanner)", "Carregar Ficheiro"],
         horizontal=True,
     )
-
-    imagem_pedido = None
-    if tipo_captura == "Tirar Foto com a Câmara (Scanner)":
-      imagem_pedido = st.camera_input("Aponte a câmara para o talão do pedido")
-    else:
-      imagem_pedido = st.file_uploader(
-          "Enviar Imagem do Pedido", type=["png", "jpg", "jpeg"]
-      )
-
-    nome_cliente = st.text_input(
-        "Nome do Cliente / Destino do Pedido",
-        placeholder="Ex: Neriah Comércio",
+    img_ped = (
+        st.camera_input("Aponte para o talão")
+        if tipo_cap == "Tirar Foto com a Câmara (Scanner)"
+        else st.file_uploader("Ficheiro", type=["png", "jpg"])
+    )
+    cli_nome = st.text_input(
+        "Nome do Cliente / Destino", placeholder="Ex: Neriah Comércio"
     )
 
-    if imagem_pedido:
-      st.image(imagem_pedido, caption="Imagem do Pedido Capturada", width=350)
-      st.success("📸 Imagem escaneada e pronta a processar!")
+    if img_ped:
+      st.image(img_ped, width=300)
+      st.success("Talão capturado com sucesso!")
 
-  st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.subheader("Adicionar Itens ao Pedido")
+    if "temp_itens" not in st.session_state:
+      st.session_state.temp_itens = []
 
-  with st.container(border=True):
-    st.subheader("🛒 2. Adicionar Itens à Lista de Separação")
-
-    if "pedido_temp" not in st.session_state:
-      st.session_state.pedido_temp = []
-
-    col_p1, col_p2 = st.columns([2, 1])
-    with col_p1:
-      prod_pedido = st.selectbox(
-          "Selecione o Produto", df["Produto"].tolist(), key="p_prod"
+    c_p1, c_p2 = st.columns([2, 1])
+    with c_p1:
+      item_sel = st.selectbox(
+          "Produto", df["Produto"].tolist(), key="sel_item_ped"
       )
-    with col_p2:
-      qtd_pedido_item = st.number_input(
-          "Quantidade Solicitada", min_value=1, step=1, key="p_qtd"
+    with c_p2:
+      qtd_sel = st.number_input(
+          "Quantidade", min_value=1, value=1, key="qtd_item_ped"
       )
 
-    if st.button("➕ Adicionar Item ao Pedido"):
-      st.session_state.pedido_temp.append(
-          {"produto": prod_pedido, "qtd": qtd_pedido_item}
-      )
-      st.success(f"Adicionado: {prod_pedido} ({qtd_pedido_item} un)")
+    if st.button("Adicionar item à lista do talão"):
+      st.session_state.temp_itens.append({"produto": item_sel, "qtd": qtd_sel})
+      st.success(f"Adicionado: {item_sel} ({qtd_sel} un)")
 
-    if st.session_state.pedido_temp:
-      st.markdown("#### Itens Atuais no Pedido:")
-      for itm in st.session_state.pedido_temp:
-        st.write(f"- 📦 **{itm['produto']}**: {itm['qtd']} unidades")
+    if st.session_state.temp_itens:
+      st.write("**Itens capturados para este pedido:**")
+      for it in st.session_state.temp_itens:
+        st.write(f"- {it['produto']}: **{it['qtd']} un**")
 
-      if st.button("🚀 Finalizar e Criar Pedido Ativo"):
-        if nome_cliente:
-          id_ped = f"Pedido_{datetime.datetime.now().strftime('%H%M%S')}"
-          st.session_state.pedidos_ativos[id_ped] = {
-              "cliente": nome_cliente,
+      if st.button("🚀 Gerar Setor de Separação para este Pedido"):
+        if cli_nome:
+          pid = f"Pedido_{datetime.datetime.now().strftime('%H%M%S')}"
+          st.session_state.pedidos_ativos[pid] = {
+              "cliente": cli_nome,
               "itens": [
                   {
                       "produto": i["produto"],
                       "qtd_pedida": i["qtd"],
                       "qtd_separada": 0,
                   }
-                  for i in st.session_state.pedido_temp
+                  for i in st.session_state.temp_itens
               ],
               "concluido": False,
           }
-          st.session_state.pedido_temp = []
-          st.success(
-              f"Pedido '{id_ped}' criado com sucesso para {nome_cliente}!"
-          )
+          st.session_state.temp_itens = []
+          st.success(f"Setor de separação criado com ID: {pid}!")
           st.rerun()
         else:
-          st.error(
-              "Por favor, preencha o nome do cliente antes de finalizar."
-          )
+          st.error("Insira o nome do cliente.")
 
   st.markdown("<br>", unsafe_allow_html=True)
-  st.markdown("### 📋 3. Check-list de Separação Ativa")
+  st.markdown("### 📦 2. Setores de Separação Ativos (Leitor de Barras)")
 
   if not st.session_state.pedidos_ativos:
-    st.info("ℹ️ Não existem pedidos ativos no momento.")
+    st.info("Nenhum pedido em separação no momento.")
   else:
-    for id_p, dados_p in st.session_state.pedidos_ativos.items():
-      status_txt = (
-          "✅ Concluído" if dados_p["concluido"] else "⏳ Em Andamento"
-      )
-
+    for pid, pdata in st.session_state.pedidos_ativos.items():
+      stato = "✅ Separado" if pdata["concluido"] else "⏳ Em Separação"
       with st.expander(
-          f"📦 {id_p} — Cliente: **{dados_p['cliente']}** [{status_txt}]",
-          expanded=not dados_p["concluido"],
+          f"📦 {pid} — Cliente: **{pdata['cliente']}** [{stato}]",
+          expanded=not pdata["concluido"],
       ):
-        scan_barras = st.text_input(
-            f"🔍 Bipar Código de Barras para Separar ({id_p})",
-            key=f"scan_{id_p}",
-            placeholder="Passe o leitor ou digite o código...",
+
+        # CAMINHO DO LEITOR DE CÓDIGO DE BARRAS PARA REMOVER ITEM A ITEM
+        scan_codigo = st.text_input(
+            f"🔍 Escanear Código de Barras do Produto ({pid})",
+            key=f"scan_sep_{pid}",
+            placeholder="Passe o leitor de barras para separar 1 unidade...",
         )
-        if scan_barras:
-          match_prod = df[df["Codigo_Barras"] == scan_barras]
-          if not match_prod.empty:
-            nome_encontrado = match_prod.iloc[0]["Produto"]
-            encontrou = False
-            for itm in dados_p["itens"]:
-              if itm["produto"] == nome_encontrado:
-                encontrou = True
+        if scan_codigo:
+          match_bar = df[df["Codigo_Barras"] == scan_codigo]
+          if not match_bar.empty:
+            nome_prod_encontrado = match_bar.iloc[0]["Produto"]
+            achou_no_pedido = False
+            for itm in pdata["itens"]:
+              if itm["produto"] == nome_prod_encontrado:
+                achou_no_pedido = True
                 if itm["qtd_separada"] < itm["qtd_pedida"]:
                   itm["qtd_separada"] += 1
                   st.success(
-                      f"✔️ Adicionada 1 unidade de {nome_encontrado}! Progresso:"
+                      f"✔️ Separado 1 unidade de {nome_prod_encontrado}! Progresso:"
                       f" {itm['qtd_separada']}/{itm['qtd_pedida']}"
                   )
                   st.rerun()
                 else:
                   st.warning(
-                      f"O item {nome_encontrado} já atingiu a quantidade máxima"
-                      " pedida!"
+                      f"O item {nome_prod_encontrado} já está completo neste"
+                      " pedido!"
                   )
-            if not encontrou:
+            if not achou_no_pedido:
               st.error(
-                  f"O produto '{nome_encontrado}' não faz parte deste pedido!"
+                  f"O produto '{nome_prod_encontrado}' não pertence a este"
+                  " pedido!"
               )
           else:
-            st.error("Código de barras não encontrado no stock!")
+            st.error("Código de barras desconhecido!")
 
         st.markdown("---")
-        todos_completos = True
-        for idx_i, item in enumerate(dados_p["itens"]):
-          prod_nome = item["produto"]
-          max_qtd = item["qtd_pedida"]
-          atual_qtd = item["qtd_separada"]
+        todos_ok = True
+        for i_idx, item in enumerate(pdata["itens"]):
+          p_name = item["produto"]
+          m_qtd = item["qtd_pedida"]
+          a_qtd = item["qtd_separada"]
 
-          cor_estilo = (
+          # Cor verde se atingiu o máximo pedido
+          estilo_cor = (
               "color: #28a745; font-weight: bold; background-color: #e8f5e9;"
               " padding: 4px 8px; border-radius: 4px;"
-              if atual_qtd >= max_qtd
+              if a_qtd >= m_qtd
               else "color: #333;"
           )
 
-          col_c1, col_c2, col_c3 = st.columns([3, 2, 2])
-          with col_c1:
+          col1, col2, col3 = st.columns([3, 2, 2])
+          with col1:
             st.markdown(
-                f"<span style='{cor_estilo}'>{prod_nome}</span>",
+                f"<span style='{estilo_cor}'>{p_name}</span>",
                 unsafe_allow_html=True,
             )
-          with col_c2:
+          with col2:
             st.markdown(
-                f"<span style='{cor_estilo}'>Progresso:"
-                f" **{atual_qtd}/{max_qtd}**</span>",
+                f"<span style='{estilo_cor}'>Separado: **{a_qtd}/{m_qtd}**</span>",
                 unsafe_allow_html=True,
             )
-          with col_c3:
-            b_mais = st.button("➕", key=f"mais_{id_p}_{idx_i}")
-            b_menos = st.button("➖", key=f"menos_{id_p}_{idx_i}")
-
-            if b_mais and atual_qtd < max_qtd:
+          with col3:
+            b_mais = st.button("➕", key=f"mais_{pid}_{i_idx}")
+            b_menos = st.button("➖", key=f"menos_{pid}_{i_idx}")
+            if b_mais and a_qtd < m_qtd:
               item["qtd_separada"] += 1
               st.rerun()
-            if b_menos and atual_qtd > 0:
+            if b_menos and a_qtd > 0:
               item["qtd_separada"] -= 1
               st.rerun()
 
-          if atual_qtd < max_qtd:
-            todos_completos = False
+          if a_qtd < m_qtd:
+            todos_ok = False
 
         st.markdown("<br>", unsafe_allow_html=True)
-        if not todos_completos:
+        if not todos_ok:
           st.warning(
-              "⚠️ **Pedido em andamento:** Existem itens com contagem pendente"
-              " de separação."
+              "⚠️ Separação em andamento. Escaneie os códigos de barras ou use"
+              " os botões para concluir."
           )
         else:
           st.success(
-              "✨ **Tudo pronto! Todos os itens atingiram a contagem máxima"
-              " (Verde).**"
+              "✨ **Todos os itens deste pedido foram separados com sucesso"
+              " (Verde)!**"
           )
-          if not dados_p["concluido"]:
+          if not pdata["concluido"]:
             if st.button(
-                f"📥 Confirmar Retirada Automática do Stock ({id_p})",
-                key=f"baixa_{id_p}z",
+                f"📥 Confirmar e Dar Baixa Definitiva no Stock ({pid})",
+                key=f"baixar_{pid}",
             ):
-              erro_stock = False
-              for item in dados_p["itens"]:
-                p_nome = item["produto"]
-                q_sep = item["qtd_pedida"]
-                r_idx = df[df["Produto"] == p_nome].index[0]
-                if df.loc[r_idx, "Quantidade"] >= q_sep:
-                  df.loc[r_idx, "Quantidade"] -= q_sep
-                  data_atual = datetime.datetime.now().strftime(
-                      "%Y-%m-%d %H:%M"
-                  )
-                  nova_hist = pd.DataFrame(
-                      [[
-                          data_atual,
-                          st.session_state.username,
-                          "Expedição por Pedido",
-                          p_nome,
-                          q_sep,
-                      ]],
-                      columns=[
-                          "Data",
-                          "Utilizador",
-                          "Acao",
-                          "Item",
-                          "Quantidade",
-                      ],
-                  )
-                  st.session_state.historico = pd.concat(
-                      [st.session_state.historico, nova_hist], ignore_index=True
-                  )
+              erro_stk = False
+              for item in pdata["itens"]:
+                p_n = item["produto"]
+                q_s = item["qtd_pedida"]
+                r_idx = df[df["Produto"] == p_n].index[0]
+                if df.loc[r_idx, "Quantidade"] >= q_s:
+                  df.loc[r_idx, "Quantidade"] -= q_s
                 else:
-                  erro_stock = True
-                  st.error(f"Stock insuficiente para o item {p_nome}!")
+                  erro_stk = True
+                  st.error(f"Stock insuficiente para {p_n}!")
 
-              if not erro_stock:
-                dados_p["concluido"] = True
+              if not erro_stk:
+                pdata["concluido"] = True
                 st.success(
-                    "Baixa automática efetuada com sucesso no stock geral!"
+                    "Baixa de stock efetuada com sucesso para todo o pedido!"
                 )
                 st.rerun()
 
 
-# --- 5. MENSAGENS & FICHEIROS ---
+# --- 5. MENSAGENS ---
 elif menu.startswith("💬 Mensagens"):
-  st.header("💬 Central de Mensagens e Partilha de Ficheiros")
-  lista_destinatarios = [
-      u
-      for u in st.session_state.users.keys()
-      if u != st.session_state.username
-  ]
-
-  if not lista_destinatarios:
-    st.info("Não existem outros utilizadores registados.")
-  else:
-    destinatario = st.selectbox("Para:", lista_destinatarios)
-    texto_msg = st.text_area("Texto / Recado")
-    ficheiro_anexado = st.file_uploader(
-        "Anexar Ficheiro", type=["pdf", "png", "jpg", "csv", "xlsx", "txt"]
-    )
-
-    if st.button("Enviar Mensagem / Ficheiro"):
-      if texto_msg.strip() or ficheiro_anexado:
-        f_nome = ficheiro_anexado.name if ficheiro_anexado else None
-        f_bytes = ficheiro_anexado.getvalue() if ficheiro_anexado else None
-        st.session_state.mensagens.append({
-            "de": st.session_state.username,
-            "para": destinatario,
-            "texto": texto_msg,
-            "ficheiro_nome": f_nome,
-            "ficheiro_bytes": f_bytes,
-            "data": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "lida": False,
-        })
-        st.success("Mensagem enviada com sucesso!")
-        st.rerun()
-      else:
-        st.error("Escreva uma mensagem ou anexe um ficheiro.")
-
-  st.divider()
-  st.subheader("Caixa de Entrada")
-  minhas_msgs = [
-      m
-      for m in st.session_state.mensagens
-      if m["para"] == st.session_state.username
-  ]
-  if not minhas_msgs:
-    st.info("A sua caixa de entrada está limpa.")
-  else:
-    for i, m in enumerate(minhas_msgs):
-      estado = "📩 [Novo]" if not m["lida"] else "✔️ [Lido]"
-      with st.expander(f"{estado} De: {m['de']} em {m['data']}"):
-        st.write(m["texto"])
-        if m["ficheiro_nome"]:
-          st.download_button(
-              label=f"📥 Descarregar Ficheiro: {m['ficheiro_nome']}",
-              data=m["ficheiro_bytes"],
-              file_name=m["ficheiro_nome"],
-              key=f"dl_msg_{i}",
-          )
-        if not m["lida"]:
-          if st.button("Marcar como lida", key=f"lida_{i}"):
-            m["lida"] = True
-            st.rerun()
+  st.markdown("## 💬 Central de Mensagens")
+  dest = st.selectbox(
+      "Para",
+      [
+          u
+          for u in st.session_state.users.keys()
+          if u != st.session_state.username
+      ],
+  )
+  txt = st.text_area("Mensagem")
+  if st.button("Enviar"):
+    st.session_state.mensagens.append({
+        "de": st.session_state.username,
+        "para": dest,
+        "texto": txt,
+        "data": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "lida": False,
+    })
+    st.success("Enviado!")
 
 
 # --- 6. RELATÓRIOS ---
 elif menu == "📊 Romaneios & Relatórios":
-  st.header("📊 Emissão de Romaneios Semanais")
-  col1, col2 = st.columns(2)
-  with col1:
-    data_inicio = st.date_input("Início do Período")
-  with col2:
-    data_fim = st.date_input("Fim do Período")
-
-  if st.button("Gerar Romaneio"):
-    st.success(f"Romaneio gerado de {data_inicio} a {data_fim}:")
-    st.dataframe(df, use_container_width=True)
+  st.markdown("## 📊 Relatórios")
+  if st.button("Descarregar CSV"):
     csv = df.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        label="📥 Descarregar Romaneio em CSV",
-        data=csv,
-        file_name=f"romaneio_{data_inicio}_a_{data_fim}.csv",
-        mime="text/csv",
-    )
+    st.download_button("Baixar", csv, "estoque.csv", "text/csv")
 
 
-# --- 7. AUDITORIA ---
+# --- 7. HISTÓRICO ---
 elif menu == "📜 Histórico de Auditoria":
-  st.header("📜 Registo de Atividades")
-  if st.session_state.historico.empty:
-    st.info("Sem registos de movimentações nesta sessão.")
-  else:
-    st.dataframe(st.session_state.historico, use_container_width=True)
+  st.markdown("## 📜 Histórico")
+  st.dataframe(st.session_state.historico, use_container_width=True)
