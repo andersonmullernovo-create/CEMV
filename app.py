@@ -477,7 +477,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           "Método de Identificação",
           [
               "Selecionar na Lista",
-              "Bipar com Câmara Traseira (Scanner)",
+              "Carregar / Tirar Foto com Câmara do Telemóvel",
               "Digitar Código de Barras",
           ],
           horizontal=True,
@@ -489,16 +489,22 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
         produto_selecionado = st.selectbox(
             "Produto", df["Produto"].tolist(), key="sel_mov_l"
         )
-      elif modo_mov == "Bipar com Câmara Traseira (Scanner)":
-        st.info("📸 Aponte a câmara traseira para o código de barras:")
-        foto_scanner = st.camera_input(
-            "Escanear Código de Barras",
-            key="cam_scanner_entrada",
-            help="Utiliza a câmara principal/traseira do dispositivo.",
+      elif (
+          modo_mov == "Carregar / Tirar Foto com Câmara do Telemóvel"
+      ):
+        st.info(
+            "📸 Use o botão abaixo para tirar foto com a câmara traseira ou"
+            " carregar o talão/código:"
+        )
+        foto_scanner = st.file_uploader(
+            "Carregar ou Fotografar Código/Talão",
+            type=["png", "jpg", "jpeg"],
+            key="file_scanner_entrada",
         )
         if foto_scanner is not None:
+          st.image(foto_scanner, width=250)
           bc_foto = st.text_input(
-              "Confirme ou digite o código detetado:",
+              "Confirme ou digite o código de barras correspondente:",
               placeholder="Ex: 789101",
           )
           if bc_foto:
@@ -594,8 +600,8 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
 elif menu == "📋 Gestão de Pedidos & Check-list":
   st.markdown("## 📋 Setor de Separação de Pedidos & Check-list")
   st.markdown(
-      "Importe o talão, gere o pedido e separe os itens por setor usando a"
-      " câmara traseira ou leitor."
+      "Importe o talão, gere o pedido e separe os itens por setor usando o"
+      " leitor ou telemóvel."
   )
 
   sub_tab1, sub_tab2 = st.tabs([
@@ -609,7 +615,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       tipo_cap = st.radio(
           "Origem do Pedido",
           [
-              "Tirar Foto com a Câmara Traseira",
+              "Tirar Foto com a Câmara do Telemóvel",
               "Carregar Ficheiro de Talão",
               "Apenas Inserção Manual",
           ],
@@ -617,9 +623,15 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       )
 
       img_ped = None
-      if tipo_cap == "Tirar Foto com a Câmara Traseira":
-        img_ped = st.camera_input(
-            "Aponte para o talão do pedido", key="cam_traseira_talao"
+      if tipo_cap == "Tirar Foto com a Câmara do Telemóvel":
+        st.info(
+            "💡 Dica: Ao carregar abaixo, o seu telemóvel permitirá escolher"
+            " a câmara traseira (com foco e flash) diretamente."
+        )
+        img_ped = st.file_uploader(
+            "Tirar / Selecionar Foto do Talão",
+            type=["png", "jpg", "jpeg"],
+            key="cam_traseira_talao",
         )
       elif tipo_cap == "Carregar Ficheiro de Talão":
         img_ped = st.file_uploader(
@@ -638,7 +650,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       st.markdown("---")
       st.info(
           "⚡ **Atalho de Importação:** Clique no botão abaixo para carregar"
-          " automaticamente todos os 22 itens do talão da Neriah[span_1](start_span)[span_1](end_span)."
+          " automaticamente todos os 22 itens do talão da Neriah[span_0](start_span)[span_0](end_span)."
       )
       if st.button(
           "⚡ [Importação Automática] Carregar Itens do Talão da Neriah",
@@ -825,38 +837,11 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                 horizontal=True,
             )
 
-            metodo_leitura = st.radio(
-                "Método de Leitura para Separação",
-                [
-                    "Digitar / Usar Leitor Físico",
-                    "Escanear com Câmara Traseira",
-                ],
-                horizontal=True,
-                key=f"metodo_leitura_{pid}",
+            scan_codigo = st.text_input(
+                f"🔍 Escanear / Digitar Código de Barras ({pid})",
+                key=f"scan_sep_{pid}",
+                placeholder="Passe o leitor ou digite o código...",
             )
-
-            scan_codigo = None
-            if metodo_leitura == "Digitar / Usar Leitor Físico":
-              scan_codigo = st.text_input(
-                  f"🔍 Código de Barras ({pid})",
-                  key=f"scan_sep_{pid}",
-                  placeholder="Passe o leitor ou digite...",
-              )
-            else:
-              st.info(
-                  "📷 Aponte a câmara traseira do telemóvel ao código de"
-                  " barras:"
-              )
-              foto_sep = st.camera_input(
-                  "Câmara Traseira para Check-list", key=f"cam_sep_{pid}"
-              )
-              if foto_sep is not None:
-                scan_codigo = st.text_input(
-                    f"Confirme o código escaneado pela câmara ({pid}):",
-                    key=f"conf_cam_{pid}",
-                    placeholder="Ex: 789101",
-                )
-
             if scan_codigo:
               match_bar = df[df["Codigo_Barras"] == scan_codigo]
               if not match_bar.empty:
