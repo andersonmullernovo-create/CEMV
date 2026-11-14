@@ -168,14 +168,18 @@ df = st.session_state.estoque
 # --- 1. PAINEL DO ADMINISTRADOR ---
 if menu == "⚙️ Painel do Administrador & Agenda":
   st.markdown("## ⚙️ Painel de Controlo do Administrador")
-  st.markdown("Gestão centralizada de acessos, setores, calendário e edição.")
+  st.markdown(
+      "Gestão centralizada de acessos, setores, calendário, edição rápida,"
+      " backup e dados."
+  )
 
-  tab_adm1, tab_adm2, tab_adm3, tab_adm4, tab_adm5 = st.tabs([
-      "👥 Utilizadores & Permissões",
+  tab_adm1, tab_adm2, tab_adm3, tab_adm4, tab_adm5, tab_adm6 = st.tabs([
+      "👥 Utilizadores",
       "🏢 Setores",
-      "📅 Calendário & Agenda",
-      "✏️ Edição de Itens",
-      "🎨 Visual & Eliminação",
+      "📅 Agenda",
+      "✏️ Editar Itens",
+      "💾 Backup & Restauro",
+      "🎨 Visual & Eliminar",
   ])
 
   with tab_adm1:
@@ -248,7 +252,7 @@ if menu == "⚙️ Painel do Administrador & Agenda":
 
   with tab_adm3:
     with st.container(border=True):
-      st.subheader("📅 Agenda")
+      st.subheader("📅 Agenda de Eventos")
       data_evento = st.date_input("Data")
       desc_evento = st.text_input("Descrição")
       if st.button("Adicionar Evento"):
@@ -263,9 +267,9 @@ if menu == "⚙️ Painel do Administrador & Agenda":
 
   with tab_adm4:
     with st.container(border=True):
-      st.subheader("✏️ Edição Rápida de Itens")
+      st.subheader("✏️ Edição Rápida de Itens Cadastrados")
       prod_editar = st.selectbox(
-          "Selecione", df["Produto"].tolist(), key="sel_ed"
+          "Selecione o produto", df["Produto"].tolist(), key="sel_ed"
       )
       if prod_editar:
         idx_ed = df[df["Produto"] == prod_editar].index[0]
@@ -295,15 +299,46 @@ if menu == "⚙️ Painel do Administrador & Agenda":
 
   with tab_adm5:
     with st.container(border=True):
-      st.subheader("🎨 Estilo & Eliminação")
+      st.subheader("💾 Backup e Restauro de Dados")
+      st.markdown(
+          "Transfira uma cópia de segurança do seu inventário atual em formato"
+          " CSV ou restaure dados anteriores."
+      )
+
+      csv_data = df.to_csv(index=False).encode("utf-8")
+      st.download_button(
+          label="📥 Descarregar Backup do Stock (CSV)",
+          data=csv_data,
+          file_name=f"backup_estoque_{datetime.date.today()}.csv",
+          mime="text/csv",
+      )
+
+      st.markdown("---")
+      uploaded_backup = st.file_uploader(
+          "Restaurar Stock através de Ficheiro CSV", type=["csv"]
+      )
+      if uploaded_backup is not None:
+        if st.button("🔄 Confirmar Restauro do Stock"):
+          try:
+            df_restaurado = pd.read_csv(uploaded_backup)
+            st.session_state.estoque = df_restaurado
+            st.success("Stock restaurado com sucesso!")
+            st.rerun()
+          except Exception as e:
+            st.error(f"Erro ao ler o ficheiro: {e}")
+
+  with tab_adm6:
+    with st.container(border=True):
+      st.subheader("🎨 Estilo & Eliminação de Produtos")
       prod_ex = st.selectbox(
-          "Eliminar Produto", df["Produto"].tolist(), key="ex_p"
+          "Eliminar Produto do Catálogo", df["Produto"].tolist(), key="ex_p"
       )
       if st.button("Confirmar Eliminação"):
         st.session_state.estoque = df[
             df["Produto"] != prod_ex
         ].reset_index(drop=True)
-        pages = st.rerun()
+        st.success("Produto eliminado!")
+        st.rerun()
 
 
 # --- 2. CONSULTAR STOCK ---
@@ -312,7 +347,7 @@ elif menu == "🍲 Consultar Stock & Setores":
   setor_filtro = st.selectbox(
       "Setor", ["Todos os Setores"] + st.session_state.setores
   )
-  pesquisa = st.text_input("🔍 Pesquisar", "")
+  pesquisa = st.text_input("🔍 Pesquisar por Produto ou Código", "")
 
   df_f = df.copy()
   if setor_filtro != "Todos os Setores":
@@ -340,61 +375,132 @@ elif menu == "🍲 Consultar Stock & Setores":
 
 # --- 3. ENTRADAS E SAÍDAS ---
 elif menu == "➕ Entradas / Saídas (Expedição)":
-  st.markdown("## ➕ Entradas e Saídas")
-  modo_mov = st.radio(
-      "Método", ["Selecionar na Lista", "Bipar Código de Barras"], horizontal=True
-  )
-  prod_mov = None
-  if modo_mov == "Selecionar na Lista":
-    prod_mov = st.selectbox("Produto", df["Produto"].tolist())
+  st.markdown("## ➕ Entradas, Saídas e Registo Manual")
+
+  if not permissoes_atuais["pode_movimentar"]:
+    st.error("Sem permissão para movimentar stock.")
   else:
-    bc = st.text_input("Bipar Código de Barras")
-    if bc:
-      m = df[df["Codigo_Barras"] == bc]
-      if not m.empty:
-        prod_mov = m.iloc[0]["Produto"]
-        st.success(f"Encontrado: {prod_mov}")
+    with st.container(border=True):
+      cadastrar_novo_manual = st.checkbox(
+          "➕ Adicionar Novo Produto Manualmente ao Catálogo"
+      )
+      if cadastrar_novo_manual:
+        st.subheader("Registo Manual de Novo Item")
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+          m_nome = st.text_input("Nome do Produto")
+          m_cod = st.text_input("Código de Barras")
+          m_desc = st.text_area("Descrição")
+        with col_m2:
+          m_emb = st.number_input(
+              "Unidades por Embalagem", min_value=1, value=1
+          )
+          m_tipo = st.selectbox(
+              "Tipo", ["Produto Acabado", "Matéria-Prima", "Insumo", "Embalagem"]
+          )
+          m_setor = st.selectbox("Setor", st.session_state.setores)
+          m_min = st.number_input("Limite Mínimo", min_value=1, value=10)
+
+        if st.button("Guardar Novo Produto Manual"):
+          if m_nome and m_cod:
+            nova_l = pd.DataFrame({
+                "Codigo_Barras": [m_cod],
+                "Produto": [m_nome],
+                "Descricao": [m_desc],
+                "Unidades_Embalagem": [m_emb],
+                "Tipo_Item": [m_tipo],
+                "Setor": [m_setor],
+                "Quantidade": [0],
+                "Limite_Minimo": [m_min],
+                "Validade": [datetime.date.today().strftime("%Y-%m-%d")],
+                "Ultima_Modificacao": [
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                ],
+                "Modificado_Por": [st.session_state.username],
+            })
+            st.session_state.estoque = pd.concat(
+                [st.session_state.estoque, nova_l], ignore_index=True
+            )
+            st.success("Produto adicionado manualmente ao stock!")
+            st.rerun()
+          else:
+            st.error("Preencha o nome e o código de barras.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.container(border=True):
+      st.subheader("📦 Movimentar Stock (Entrada / Saída)")
+      modo_mov = st.radio(
+          "Método",
+          ["Selecionar na Lista", "Bipar Código de Barras"],
+          horizontal=True,
+      )
+      prod_mov = None
+      if modo_mov == "Selecionar na Lista":
+        prod_mov = st.selectbox(
+            "Produto", df["Produto"].tolist(), key="sel_mov_l"
+        )
       else:
-        st.error("Não encontrado.")
+        bc = st.text_input("Bipar Código de Barras", key="bc_mov")
+        if bc:
+          m = df[df["Codigo_Barras"] == bc]
+          if not m.empty:
+            prod_mov = m.iloc[0]["Produto"]
+            st.success(f"Encontrado: {prod_mov}")
+          else:
+            st.error("Não encontrado.")
 
-  if prod_mov:
-    tipo_op = st.radio(
-        "Operação", ["Recebimento (Entrada)", "Baixa (Saída)"], horizontal=True
-    )
-    qtd_op = st.number_input("Quantidade", min_value=1, value=1)
-    if st.button("Registar Movimento"):
-      idx = df[df["Produto"] == prod_mov].index[0]
-      if "Recebimento" in tipo_op:
-        df.loc[idx, "Quantidade"] += qtd_op
-      else:
-        if df.loc[idx, "Quantidade"] >= qtd_op:
-          df.loc[idx, "Quantidade"] -= qtd_op
-        else:
-          st.error("Stock insuficiente!")
-          st.stop()
-      st.success("Movimento registado!")
+      if prod_mov:
+        tipo_op = st.radio(
+            "Operação",
+            ["Recebimento (Entrada)", "Baixa (Saída)"],
+            horizontal=True,
+        )
+        qtd_op = st.number_input(
+            "Quantidade", min_value=1, value=1, key="qtd_mov_val"
+        )
+        if st.button("Registar Movimento"):
+          idx = df[df["Produto"] == prod_mov].index[0]
+          if "Recebimento" in tipo_op:
+            df.loc[idx, "Quantidade"] += qtd_op
+          else:
+            if df.loc[idx, "Quantidade"] >= qtd_op:
+              df.loc[idx, "Quantidade"] -= qtd_op
+            else:
+              st.error("Stock insuficiente!")
+              st.stop()
+          st.success("Movimento registado com sucesso!")
 
 
-# --- 4. GESTÃO DE PEDIDOS & SEPARAÇÃO POR CÂMARA ---
+# --- 4. GESTÃO DE PEDIDOS & CHECK-LIST (Com Câmara Traseira Forçada) ---
 elif menu == "📋 Gestão de Pedidos & Check-list":
-  st.markdown("## 📋 Setor de Separação de Pedidos")
+  st.markdown("## 📋 Setor de Separação de Pedidos & Check-list")
   st.markdown(
-      "Tire foto do talão do pedido para gerar a lista de separação e escaneie"
-      " os produtos para dar baixa."
+      "Tire foto do talão ou adicione itens manualmente para gerar a lista de"
+      " separação."
   )
 
   with st.container(border=True):
-    st.subheader("📸 1. Criar Pedido via Câmara / Talão")
+    st.subheader("📸 1. Criar Pedido (Via Câmara Traseira ou Manual)")
     tipo_cap = st.radio(
-        "Origem",
-        ["Tirar Foto com a Câmara (Scanner)", "Carregar Ficheiro"],
+        "Origem do Pedido",
+        [
+            "Tirar Foto com a Câmara Traseira",
+            "Carregar Ficheiro",
+            "Apenas Inserção Manual",
+        ],
         horizontal=True,
     )
-    img_ped = (
-        st.camera_input("Aponte para o talão")
-        if tipo_cap == "Tirar Foto com a Câmara (Scanner)"
-        else st.file_uploader("Ficheiro", type=["png", "jpg"])
-    )
+    img_ped = None
+    if tipo_cap == "Tirar Foto com a Câmara Traseira":
+      # Força o uso da câmara traseira através do parâmetro facingMode
+      img_ped = st.camera_input(
+          "Aponte para o talão do pedido",
+          key="cam_traseira_talao",
+          help="Certifique-se de permitir o acesso à câmara no browser.",
+      )
+    elif tipo_cap == "Carregar Ficheiro":
+      img_ped = st.file_uploader("Ficheiro do talão", type=["png", "jpg"])
+
     cli_nome = st.text_input(
         "Nome do Cliente / Destino", placeholder="Ex: Neriah Comércio"
     )
@@ -404,26 +510,44 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       st.success("Talão capturado com sucesso!")
 
     st.markdown("---")
-    st.subheader("Adicionar Itens ao Pedido")
+    st.subheader("Adicionar Itens ao Pedido (Seleção ou Digitação Manual)")
+
     if "temp_itens" not in st.session_state:
       st.session_state.temp_itens = []
 
+    modo_add_ped = st.radio(
+        "Como adicionar o item?",
+        ["Selecionar do Stock", "Digitar Nome Manualmente"],
+        horizontal=True,
+        key="modo_add_pedido",
+    )
+
     c_p1, c_p2 = st.columns([2, 1])
     with c_p1:
-      item_sel = st.selectbox(
-          "Produto", df["Produto"].tolist(), key="sel_item_ped"
-      )
+      if modo_add_ped == "Selecionar do Stock":
+        item_sel = st.selectbox(
+            "Produto do Stock", df["Produto"].tolist(), key="sel_item_ped"
+        )
+      else:
+        item_sel = st.text_input(
+            "Nome do Produto Manual / Personalizado", key="txt_item_ped_manual"
+        )
     with c_p2:
       qtd_sel = st.number_input(
           "Quantidade", min_value=1, value=1, key="qtd_item_ped"
       )
 
-    if st.button("Adicionar item à lista do talão"):
-      st.session_state.temp_itens.append({"produto": item_sel, "qtd": qtd_sel})
-      st.success(f"Adicionado: {item_sel} ({qtd_sel} un)")
+    if st.button("Adicionar Item à Lista do Pedido"):
+      if item_sel and str(item_sel).strip():
+        st.session_state.temp_itens.append(
+            {"produto": str(item_sel).strip(), "qtd": qtd_sel}
+        )
+        st.success(f"Adicionado: {item_sel} ({qtd_sel} un)")
+      else:
+        st.error("Informe o nome do produto.")
 
     if st.session_state.temp_itens:
-      st.write("**Itens capturados para este pedido:**")
+      st.write("**Itens no Pedido Atual:**")
       for it in st.session_state.temp_itens:
         st.write(f"- {it['produto']}: **{it['qtd']} un**")
 
@@ -460,8 +584,6 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
           f"📦 {pid} — Cliente: **{pdata['cliente']}** [{stato}]",
           expanded=not pdata["concluido"],
       ):
-
-        # CAMINHO DO LEITOR DE CÓDIGO DE BARRAS PARA REMOVER ITEM A ITEM
         scan_codigo = st.text_input(
             f"🔍 Escanear Código de Barras do Produto ({pid})",
             key=f"scan_sep_{pid}",
@@ -502,7 +624,6 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
           m_qtd = item["qtd_pedida"]
           a_qtd = item["qtd_separada"]
 
-          # Cor verde se atingiu o máximo pedido
           estilo_cor = (
               "color: #28a745; font-weight: bold; background-color: #e8f5e9;"
               " padding: 4px 8px; border-radius: 4px;"
@@ -554,12 +675,14 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
               for item in pdata["itens"]:
                 p_n = item["produto"]
                 q_s = item["qtd_pedida"]
-                r_idx = df[df["Produto"] == p_n].index[0]
-                if df.loc[r_idx, "Quantidade"] >= q_s:
-                  df.loc[r_idx, "Quantidade"] -= q_s
-                else:
-                  erro_stk = True
-                  st.error(f"Stock insuficiente para {p_n}!")
+                match_stk = df[df["Produto"] == p_n]
+                if not match_stk.empty:
+                  r_idx = match_stk.index[0]
+                  if df.loc[r_idx, "Quantidade"] >= q_s:
+                    df.loc[r_idx, "Quantidade"] -= q_s
+                  else:
+                    erro_stk = True
+                    st.error(f"Stock insuficiente para {p_n}!")
 
               if not erro_stk:
                 pdata["concluido"] = True
@@ -594,13 +717,15 @@ elif menu.startswith("💬 Mensagens"):
 
 # --- 6. RELATÓRIOS ---
 elif menu == "📊 Romaneios & Relatórios":
-  st.markdown("## 📊 Relatórios")
-  if st.button("Descarregar CSV"):
+  st.markdown("## 📊 Relatórios & Romaneios")
+  if st.button("Descarregar CSV do Stock"):
     csv = df.to_csv(index=False).encode("utf-8")
-    st.download_button("Baixar", csv, "estoque.csv", "text/csv")
+    st.download_button(
+        "Baixar Ficheiro", csv, "estoque_rbm.csv", "text/csv"
+    )
 
 
 # --- 7. HISTÓRICO ---
 elif menu == "📜 Histórico de Auditoria":
-  st.markdown("## 📜 Histórico")
+  st.markdown("## 📜 Histórico de Atividades")
   st.dataframe(st.session_state.historico, use_container_width=True)
