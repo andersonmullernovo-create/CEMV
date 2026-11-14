@@ -79,6 +79,7 @@ if "estoque" not in st.session_state:
       "Setor": ["Secos e Molhados", "Secos e Molhados", "Câmara Fria"],
       "Quantidade": [40, 30, 20],
       "Limite_Minimo": [10, 25, 5],
+      "Fabricacao": ["2026-10-01", "2026-09-15", "2026-10-10"],
       "Validade": ["2026-11-15", "2027-05-20", "2026-11-10"],
       "Ultima_Modificacao": ["2026-11-01", "2026-11-05", "2026-11-10"],
       "Modificado_Por": ["admin", "operador", "admin"],
@@ -165,14 +166,21 @@ if st.sidebar.button("Terminar Sessão"):
 
 df = st.session_state.estoque
 
-# --- 1. PAINEL DO ADMINISTRADOR ---
-if menu == "⚙️ Painel do Administrador & Agenda":
-  st.markdown("## ⚙️ Painel de Controlo do Administrador")
-  st.markdown(
-      "Gestão centralizada de acessos, setores, calendário, edição rápida,"
-      " backup e dados."
-  )
+if "Fabricacao" not in df.columns:
+  df["Fabricacao"] = datetime.date.today().strftime("%Y-%m-%d")
+if "Validade" not in df.columns:
+  df["Validade"] = datetime.date.today().strftime("%Y-%m-%d")
 
+# --- 1. PAINEL DO ADMINISTRADOR (Exclusivo para Administradores) ---
+if menu == "⚙️ Painel do Administrador & Agenda":
+  if st.session_state.perfil != "Administrador":
+    st.error(
+        "⚠️ Acesso restrito! Apenas administradores podem aceder a este"
+        " painel."
+    )
+    st.stop()
+
+  st.markdown("## ⚙️ Painel de Controlo do Administrador")
   tab_adm1, tab_adm2, tab_adm3, tab_adm4, tab_adm5, tab_adm6 = st.tabs([
       "👥 Utilizadores",
       "🏢 Setores",
@@ -188,7 +196,6 @@ if menu == "⚙️ Painel do Administrador & Agenda":
       novo_user = st.text_input("Nome do Utilizador")
       nova_senha = st.text_input("Senha de Acesso", type="password")
       novo_perfil = st.selectbox("Perfil", ["Operador", "Administrador"])
-
       col_p1, col_p2, col_p3 = st.columns(3)
       with col_p1:
         pode_cad = st.checkbox("Pode Cadastrar", value=True)
@@ -196,7 +203,6 @@ if menu == "⚙️ Painel do Administrador & Agenda":
         pode_exc = st.checkbox("Pode Excluir", value=False)
       with col_p3:
         pode_mov = st.checkbox("Pode Movimentar", value=True)
-
       if st.button("Guardar Utilizador"):
         if novo_user and nova_senha:
           st.session_state.users[novo_user] = {
@@ -237,7 +243,6 @@ if menu == "⚙️ Painel do Administrador & Agenda":
             st.error("Já existe.")
         else:
           st.error("Nome inválido.")
-
     st.markdown("<br>", unsafe_allow_html=True)
     for s in list(st.session_state.setores):
       with st.container(border=True):
@@ -366,7 +371,8 @@ elif menu == "🍲 Consultar Stock & Setores":
 
   def estilo_alerta(row):
     hoje = datetime.date.today().strftime("%Y-%m-%d")
-    if row["Quantidade"] <= row["Limite_Minimo"] or row["Validade"] <= hoje:
+    val = row.get("Validade", hoje)
+    if row["Quantidade"] <= row["Limite_Minimo"] or val <= hoje:
       return [
           "color: red; font-weight: bold; background-color: #ffe6e6;"
       ] * len(row)
@@ -378,118 +384,215 @@ elif menu == "🍲 Consultar Stock & Setores":
   )
 
 
-# --- 3. ENTRADAS E SAÍDAS ---
+# --- 3. ENTRADAS E SAÍDAS (Cadastro de Novos Produtos Exclusivo para Administrador) ---
 elif menu == "➕ Entradas / Saídas (Expedição)":
-  st.markdown("## ➕ Entradas, Saídas e Registo Manual")
+  st.markdown("## ➕ Entradas, Saídas e Registo por Scanner")
 
   if not permissoes_atuais["pode_movimentar"]:
     st.error("Sem permissão para movimentar stock.")
   else:
-    with st.container(border=True):
-      cadastrar_novo_manual = st.checkbox(
-          "➕ Adicionar Novo Produto Manualmente ao Catálogo"
-      )
-      if cadastrar_novo_manual:
-        st.subheader("Registo Manual de Novo Item")
-        col_m1, col_m2 = st.columns(2)
-        with col_m1:
-          m_nome = st.text_input("Nome do Produto")
-          m_cod = st.text_input("Código de Barras")
-          m_desc = st.text_area("Descrição")
-        with col_m2:
-          m_emb = st.number_input(
-              "Unidades por Embalagem", min_value=1, value=1
-          )
-          m_tipo = st.selectbox(
-              "Tipo", ["Produto Acabado", "Matéria-Prima", "Insumo", "Embalagem"]
-          )
-          m_setor = st.selectbox("Setor de Armazenamento", st.session_state.setores)
-          m_min = st.number_input("Limite Mínimo", min_value=1, value=10)
+    # Restringe a adição de novos produtos ao catálogo estritamente ao ADMINISTRADOR
+    if st.session_state.perfil == "Administrador":
+      with st.container(border=True):
+        cadastrar_novo_manual = st.checkbox(
+            "➕ [Admin] Adicionar Novo Produto Manualmente ao Catálogo"
+        )
+        if cadastrar_novo_manual:
+          st.subheader("Registo Manual de Novo Item no Catálogo")
+          col_m1, col_m2 = st.columns(2)
+          with col_m1:
+            m_nome = st.text_input("Nome do Produto")
+            m_cod = st.text_input("Código de Barras")
+            m_desc = st.text_area("Descrição")
+          with col_m2:
+            m_emb = st.number_input(
+                "Unidades por Embalagem", min_value=1, value=1
+            )
+            m_tipo = st.selectbox(
+                "Tipo",
+                ["Produto Acabado", "Matéria-Prima", "Insumo", "Embalagem"],
+            )
+            m_setor = st.selectbox(
+                "Setor de Armazenamento", st.session_state.setores
+            )
+            m_min = st.number_input("Limite Mínimo", min_value=1, value=10)
 
-        if st.button("Guardar Novo Produto Manual"):
-          if m_nome and m_cod:
-            nova_l = pd.DataFrame({
-                "Codigo_Barras": [m_cod],
-                "Produto": [m_nome],
-                "Descricao": [m_desc],
-                "Unidades_Embalagem": [m_emb],
-                "Tipo_Item": [m_tipo],
-                "Setor": [m_setor],
-                "Quantidade": [0],
-                "Limite_Minimo": [m_min],
-                "Validade": [datetime.date.today().strftime("%Y-%m-%d")],
-                "Ultima_Modificacao": [
-                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-                ],
-                "Modificado_Por": [st.session_state.username],
-            })
-            st.session_state.estoque = pd.concat(
-                [st.session_state.estoque, nova_l], ignore_index=True
+          col_d1, col_d2 = st.columns(2)
+          with col_d1:
+            m_fab = st.date_input(
+                "Data de Fabricação (Novo Item)", datetime.date.today()
             )
-            st.success(
-                f"Produto adicionado ao setor '{m_setor}' com sucesso!"
+          with col_d2:
+            m_val = st.date_input(
+                "Data de Validade (Novo Item)", datetime.date.today()
             )
-            st.rerun()
-          else:
-            st.error("Preencha o nome e o código de barras.")
+
+          if st.button("Guardar Novo Produto Manual"):
+            if m_nome and m_cod:
+              nova_l = pd.DataFrame({
+                  "Codigo_Barras": [m_cod],
+                  "Produto": [m_nome],
+                  "Descricao": [m_desc],
+                  "Unidades_Embalagem": [m_emb],
+                  "Tipo_Item": [m_tipo],
+                  "Setor": [m_setor],
+                  "Quantidade": [0],
+                  "Limite_Minimo": [m_min],
+                  "Fabricacao": [str(m_fab)],
+                  "Validade": [str(m_val)],
+                  "Ultima_Modificacao": [
+                      datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                  ],
+                  "Modificado_Por": [st.session_state.username],
+              })
+              st.session_state.estoque = pd.concat(
+                  [st.session_state.estoque, nova_l], ignore_index=True
+              )
+              st.success(
+                  f"Produto adicionado ao setor '{m_setor}' com sucesso!"
+              )
+              st.rerun()
+            else:
+              st.error("Preencha o nome e o código de barras.")
+    else:
+      st.info(
+          "ℹ️ Apenas administradores podem cadastrar novos produtos no"
+          " catálogo geral."
+      )
 
     st.markdown("<br>", unsafe_allow_html=True)
     with st.container(border=True):
       st.subheader("📦 Movimentar Stock (Entrada / Saída)")
       modo_mov = st.radio(
-          "Método",
-          ["Selecionar na Lista", "Bipar Código de Barras"],
+          "Método de Identificação",
+          [
+              "Selecionar na Lista",
+              "Bipar com Câmara do Telemóvel (Scanner Ótico)",
+              "Digitar Código de Barras",
+          ],
           horizontal=True,
       )
-      prod_mov = None
+
+      produto_selecionado = None
+
       if modo_mov == "Selecionar na Lista":
-        prod_mov = st.selectbox(
+        produto_selecionado = st.selectbox(
             "Produto", df["Produto"].tolist(), key="sel_mov_l"
         )
+      elif modo_mov == "Bipar com Câmara do Telemóvel (Scanner Ótico)":
+        st.info(
+            "📸 Tire uma foto nítida do código de barras do produto usando a"
+            " câmara traseira:"
+        )
+        foto_scanner = st.camera_input(
+            "Escanear Código de Barras", key="cam_scanner_entrada"
+        )
+        if foto_scanner is not None:
+          bc_foto = st.text_input(
+              "Confirme ou digite o código detetado pela câmara:",
+              placeholder="Ex: 789101",
+          )
+          if bc_foto:
+            match = df[df["Codigo_Barras"] == bc_foto]
+            if not match.empty:
+              produto_selecionado = match.iloc[0]["Produto"]
+              st.success(
+                  f"✔️ Produto detetado: **{produto_selecionado}** (Setor:"
+                  f" {match.iloc[0]['Setor']})"
+              )
+            else:
+              st.error(
+                  "Código não encontrado no stock. Contacte o Administrador"
+                  " para registá-lo."
+              )
       else:
         bc = st.text_input(
-            "Bipar Código de Barras (Câmara / Leitor)", key="bc_mov"
+            "Digite o Código de Barras", placeholder="Ex: 789101..."
         )
         if bc:
-          m = df[df["Codigo_Barras"] == bc]
-          if not m.empty:
-            prod_mov = m.iloc[0]["Produto"]
+          match = df[df["Codigo_Barras"] == bc]
+          if not match.empty:
+            produto_selecionado = match.iloc[0]["Produto"]
             st.success(
-                f"Encontrado: **{prod_mov}** (Setor:"
-                f" {m.iloc[0]['Setor']})"
+                f"Encontrado: **{produto_selecionado}** (Setor:"
+                f" {match.iloc[0]['Setor']})"
             )
           else:
-            st.error("Código de barras não encontrado.")
+            st.error(
+                "Código de barras não registado no sistema. Contacte o"
+                " Administrador."
+            )
 
-      if prod_mov:
+      if produto_selecionado:
+        st.markdown("---")
         tipo_op = st.radio(
             "Operação",
             ["Recebimento (Entrada)", "Baixa (Saída)"],
             horizontal=True,
         )
-        qtd_op = st.number_input(
-            "Quantidade", min_value=1, value=1, key="qtd_mov_val"
-        )
-        if st.button("Registar Movimento"):
-          idx = df[df["Produto"] == prod_mov].index[0]
+
+        col_q1, col_q2 = st.columns(2)
+        with col_q1:
+          qtd_op = st.number_input(
+              "Quantidade a Movimentar", min_value=1, value=1, key="qtd_mov_val"
+          )
+        with col_q2:
+          data_fab_mov = st.date_input(
+              "Data de Fabricação do Lote",
+              datetime.date.today(),
+              key="fab_mov_dt",
+          )
+          data_val_mov = st.date_input(
+              "Data de Validade do Lote",
+              datetime.date.today(),
+              key="val_mov_dt",
+          )
+
+        if st.button("🚀 Confirmar e Registar Movimento", type="primary"):
+          idx = df[df["Produto"] == produto_selecionado].index[0]
           setor_reg = df.loc[idx, "Setor"]
+          data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+
           if "Recebimento" in tipo_op:
             df.loc[idx, "Quantidade"] += qtd_op
+            df.loc[idx, "Fabricacao"] = str(data_fab_mov)
+            df.loc[idx, "Validade"] = str(data_val_mov)
+            acao = "Recebimento"
           else:
             if df.loc[idx, "Quantidade"] >= qtd_op:
               df.loc[idx, "Quantidade"] -= qtd_op
+              acao = "Expedição"
             else:
-              st.error("Stock insuficiente!")
+              st.error("⚠️ Stock insuficiente para realizar esta retirada!")
               st.stop()
-          st.success(f"Movimento registado no setor **{setor_reg}**!")
+
+          df.loc[idx, "Ultima_Modificacao"] = data_atual
+          df.loc[idx, "Modificado_Por"] = st.session_state.username
+
+          nova_hist = pd.DataFrame(
+              [[
+                  data_atual,
+                  st.session_state.username,
+                  f"{acao} (Setor {setor_reg})",
+                  produto_selecionado,
+                  qtd_op,
+              ]],
+              columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"],
+          )
+          st.session_state.historico = pd.concat(
+              [st.session_state.historico, nova_hist], ignore_index=True
+          )
+          st.success(
+              f"Operação de {acao} registada com sucesso no setor **{setor_reg}**!"
+          )
 
 
 # --- 4. GESTÃO DE PEDIDOS & CHECK-LIST ---
 elif menu == "📋 Gestão de Pedidos & Check-list":
   st.markdown("## 📋 Setor de Separação de Pedidos & Check-list")
   st.markdown(
-      "Importe o talão da Neriah, gere o pedido e separe os itens por setor"
-      " usando leitor de código de barras ou botões."
+      "Importe o talão, gere o pedido e separe os itens por setor usando a"
+      " câmara ou leitor."
   )
 
   sub_tab1, sub_tab2 = st.tabs([
@@ -529,7 +632,6 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       if "temp_itens" not in st.session_state:
         st.session_state.temp_itens = []
 
-      # --- BOTÃO DE IMPORTAÇÃO RÁPIDA DO TALÃO DA NERIAH ---
       st.markdown("---")
       st.info(
           "⚡ **Atalho de Importação:** Clique no botão abaixo para carregar"
@@ -720,12 +822,35 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                 horizontal=True,
             )
 
-            # CAMPO DE LEITURA DE CÓDIGO DE BARRAS (Funciona com telemóvel / leitor de barras)
-            scan_codigo = st.text_input(
-                f"🔍 Escanear Código de Barras (Leitor ou Câmara do Telemóvel) ({pid})",
-                key=f"scan_sep_{pid}",
-                placeholder="Aponte o leitor ou use teclado com scanner...",
+            metodo_leitura = st.radio(
+                "Método de Leitura para Separação",
+                [
+                    "Digitar / Usar Leitor Físico",
+                    "Escanear com Câmara do Telemóvel",
+                ],
+                horizontal=True,
+                key=f"metodo_leitura_{pid}",
             )
+
+            scan_codigo = None
+            if metodo_leitura == "Digitar / Usar Leitor Físico":
+              scan_codigo = st.text_input(
+                  f"🔍 Código de Barras ({pid})",
+                  key=f"scan_sep_{pid}",
+                  placeholder="Passe o leitor ou digite...",
+              )
+            else:
+              st.info("📷 Aponte a câmara do telemóvel ao código de barras:")
+              foto_sep = st.camera_input(
+                  "Câmara para Check-list", key=f"cam_sep_{pid}"
+              )
+              if foto_sep is not None:
+                scan_codigo = st.text_input(
+                    f"Confirme o código escaneado pela câmara ({pid}):",
+                    key=f"conf_cam_{pid}",
+                    placeholder="Ex: 789101",
+                )
+
             if scan_codigo:
               match_bar = df[df["Codigo_Barras"] == scan_codigo]
               if not match_bar.empty:
@@ -762,7 +887,6 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
             m_qtd = item["qtd_pedida"]
             a_qtd = item["qtd_separada"]
 
-            # Descobre o setor do item no stock para exibir na lista
             match_stk = df[df["Produto"] == p_name]
             setor_item = (
                 match_stk.iloc[0]["Setor"]
