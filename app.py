@@ -397,7 +397,7 @@ elif menu == "🍲 Consultar Stock & Setores":
 
 # --- 3. ENTRADAS E SAÍDAS ---
 elif menu == "➕ Entradas / Saídas (Expedição)":
-  st.markdown("## ➕ Entradas, Saídas e Leitura Ótica de Etiquetas")
+  st.markdown("## ➕ Entradas, Saídas e Leitura Ativa por Botão")
 
   if not permissoes_atuais["pode_movimentar"]:
     st.error("Sem permissão para movimentar stock.")
@@ -477,7 +477,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           "Método de Identificação",
           [
               "Selecionar na Lista",
-              "Leitor Ótico / Bipagem de Etiqueta",
+              "🎯 Leitura Ativa por Botão (Scanner / Teclado)",
           ],
           horizontal=True,
       )
@@ -489,25 +489,38 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
             "Produto", df["Produto"].tolist(), key="sel_mov_l"
         )
       else:
-        st.info(
-            "⚡ **Modo de Leitura Rápida:** Posicione o cursor abaixo e passe o"
-            " leitor ótico ou digite o código de barras da etiqueta:"
+        st.markdown(
+            "💡 **Instruções:** Insira o código de barras ou use o leitor"
+            " ótico e clique no botão **'Disparar Leitura'** para validar."
         )
-        bc = st.text_input(
-            "Código de Barras (Leitura Ótica)",
-            placeholder="Passe a etiqueta ou digite...",
-            key="input_leitor_otico_entrada",
+        codigo_digitado = st.text_input(
+            "Código de Barras",
+            placeholder="Ex: 789101",
+            key="input_codigo_entrada_manual",
         )
-        if bc:
-          match = df[df["Codigo_Barras"] == bc]
-          if not match.empty:
-            produto_selecionado = match.iloc[0]["Produto"]
-            st.success(
-                f"✔️ Produto detetado: **{produto_selecionado}** (Setor:"
-                f" {match.iloc[0]['Setor']})"
-            )
+
+        if st.button(
+            "🎯 Disparar Leitura da Etiqueta", type="primary", key="btn_disparar_ent"
+        ):
+          if codigo_digitado:
+            match = df[df["Codigo_Barras"] == codigo_digitado.strip()]
+            if not match.empty:
+              st.session_state["produto_lido_ativo"] = match.iloc[0]["Produto"]
+              st.success(
+                  f"✔️ Produto detetado com sucesso:"
+                  f" **{st.session_state['produto_lido_ativo']}** (Setor:"
+                  f" {match.iloc[0]['Setor']})"
+              )
+            else:
+              st.error("⚠️ Código de barras não encontrado no stock.")
           else:
-            st.error("⚠️ Código de barras não encontrado no stock.")
+            st.warning("Por favor, digite ou passe o leitor no código.")
+
+        produto_selecionado = st.session_state.get("produto_lido_ativo", None)
+        if produto_selecionado:
+          st.info(
+              f"📌 Produto Ativo para Movimento: **{produto_selecionado}**"
+          )
 
       if produto_selecionado:
         st.markdown("---")
@@ -571,14 +584,17 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           st.success(
               f"Operação de {acao} registada com sucesso no setor **{setor_reg}**!"
           )
+          # Limpa o produto ativo após sucesso
+          if "produto_lido_ativo" in st.session_state:
+            del st.session_state["produto_lido_ativo"]
 
 
 # --- 4. GESTÃO DE PEDIDOS & CHECK-LIST ---
 elif menu == "📋 Gestão de Pedidos & Check-list":
   st.markdown("## 📋 Setor de Separação de Pedidos & Check-list")
   st.markdown(
-      "Importe o talão, gere o pedido e separe os itens rapidamente com o"
-      " leitor ótico de etiquetas."
+      "Importe o talão, gere o pedido e separe os itens utilizando o botão"
+      " de leitura ativa."
   )
 
   sub_tab1, sub_tab2 = st.tabs([
@@ -803,13 +819,22 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                 horizontal=True,
             )
 
-            scan_codigo = st.text_input(
-                f"🔍 Leitura Ótica de Etiqueta / Código ({pid})",
-                key=f"scan_sep_{pid}",
-                placeholder="Passe o leitor na etiqueta do produto...",
-            )
-            if scan_codigo:
-              match_bar = df[df["Codigo_Barras"] == scan_codigo]
+            # CAMPO DE LEITURA ATIVA POR BOTÃO NA SEPARAÇÃO
+            col_s1, col_s2 = st.columns([3, 1])
+            with col_s1:
+              codigo_sep_input = st.text_input(
+                  f"🔍 Código de Barras do Item ({pid})",
+                  key=f"input_sep_codigo_{pid}",
+                  placeholder="Passe a etiqueta ou digite...",
+              )
+            with col_s2:
+              st.markdown("<br>", unsafe_allow_html=True)
+              processar_clique = st.button(
+                  "🎯 Ler", key=f"btn_ler_sep_{pid}", type="primary"
+              )
+
+            if processar_clique and codigo_sep_input:
+              match_bar = df[df["Codigo_Barras"] == codigo_sep_input.strip()]
               if not match_bar.empty:
                 nome_prod_encontrado = match_bar.iloc[0]["Produto"]
                 setor_encontrado = match_bar.iloc[0]["Setor"]
@@ -897,8 +922,8 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
             )
           elif not todos_ok:
             st.warning(
-                "⚠️ Separação em andamento. Passe a etiqueta do produto no"
-                " leitor ótico ou use os botões."
+                "⚠️ Separação em andamento. Passe a etiqueta e clique em"
+                " 'Ler' ou use os botões."
             )
           else:
             if "Automática" in modo_baixa:
