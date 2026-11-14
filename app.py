@@ -502,21 +502,61 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
         )
 
       cli_nome = st.text_input(
-          "Nome do Cliente / Destino", placeholder="Ex: Neriah Comércio"
+          "Nome do Cliente / Destino",
+          value="Neriah Comércio",
+          placeholder="Ex: Neriah Comércio",
       )
-
-      if img_ped is not None:
-        st.image(img_ped, width=300, caption="Talão Capturado")
-        st.success(
-            "📸 Imagem carregada! Adicione os itens correspondentes abaixo e"
-            " clique em Gerar Pedido."
-        )
-
-      st.markdown("---")
-      st.subheader("2. Adicionar Itens ao Pedido")
 
       if "temp_itens" not in st.session_state:
         st.session_state.temp_itens = []
+
+      # --- BOTÃO FIXO DE IMPORTAÇÃO RÁPIDA (Sempre visível nesta aba) ---
+      st.markdown("---")
+      st.info(
+          "⚡ **Atalho de Importação:** Clique no botão abaixo para carregar"
+          " automaticamente todos os itens do talão da Neriah[span_1](start_span)[span_1](end_span) para a"
+          " lista de separação."
+      )
+      if st.button(
+          "⚡ [Importação Automática] Carregar Itens do Talão da Neriah",
+          type="primary",
+      ):
+        itens_talao_neriah = [
+            {"produto": "Chocolate - Calzone 12 Uni", "qtd": 1},
+            {
+                "produto": "Duo - Chocolate Branco e Preto 12 Uni",
+                "qtd": 1,
+            },
+            {"produto": "Nutella - Calzone 12 Uni", "qtd": 1},
+            {"produto": "Bolonhesa - Calzone 12 Uni", "qtd": 1},
+            {"produto": "Português - Calzone 12 Uni", "qtd": 3},
+            {"produto": "Frango Supremo - Calzone 12 Uni", "qtd": 2},
+            {"produto": "Frango Catupiry - Calzone 12 Uni", "qtd": 4},
+            {"produto": "Quatro Queijos - Calzone 12 Uni", "qtd": 2},
+            {"produto": "Frango c/ Muçarela e Orégano - Calzone", "qtd": 3},
+            {"produto": "Calabresa - Calzone 12 Uni", "qtd": 2},
+            {"produto": "Calab c/Mussarela - Calzone 12 Uni", "qtd": 4},
+            {"produto": "Filé Quatro Queijos - Calzone 12 Uni", "qtd": 3},
+            {"produto": "Carne Seca - Calzone 12 Uni", "qtd": 1},
+            {"produto": "Filé c/ Cheddar - Calzone 12 Uni", "qtd": 2},
+            {"produto": "Pizza Calabresa - 4 Unidades", "qtd": 2},
+            {"produto": "Pizza Portuguesa - 4 Unidades", "qtd": 1},
+            {"produto": "Pizza de Bacon com Catupiry - 4 Unidades", "qtd": 1},
+            {"produto": "Recheio Camarão Premium 800g", "qtd": 1},
+            {"produto": "Recheio Carne 800g", "qtd": 2},
+            {"produto": "Recheio de Mussarela 800g", "qtd": 3},
+            {"produto": "Recheio Calabresa 0,8 Kg", "qtd": 1},
+            {"produto": "Massa p/ Pastel (2 Unidades)", "qtd": 1},
+        ]
+        st.session_state.temp_itens = itens_talao_neriah
+        st.success(
+            "⚡ Todos os itens do talão foram carregados com sucesso para a"
+            " lista!"
+        )
+        st.rerun()
+
+      st.markdown("---")
+      st.subheader("2. Adicionar ou Ajustar Itens do Pedido")
 
       modo_add_ped = st.radio(
           "Como adicionar o item?",
@@ -612,9 +652,6 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                   f"⚠️ Stock insuficiente para **{p_n}** (Disponível:"
                   f" {df.loc[r_idx, 'Quantidade']}, Pedido: {q_s})!"
               )
-          else:
-            # Se for item manual sem registo no stock principal, ignoramos o abate físico ou tratamos como aviso
-            pass
 
         if not erro_stk:
           data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
