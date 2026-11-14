@@ -85,7 +85,7 @@ if "estoque" not in st.session_state:
       "Modificado_Por": ["admin", "operador", "admin"],
   })
 
-# Aplicar estilo visual dinâmico & wallpaper moderno
+# Aplicar estilo visual dinâmico & bloqueio de menu de toque longo no telemóvel
 cfg = st.session_state.config_visual
 st.markdown(
     f"""
@@ -93,10 +93,12 @@ st.markdown(
     html, body, [class*="css"] {{
         font-size: {cfg['tamanho_fonte']} !important;
         color: {cfg['cor_texto']} !important;
+        -webkit-touch-callout: none !important; /* Desativa menu de toque longo em iOS e Android */
     }}
     .stApp {{
         background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         background-attachment: fixed;
+        -webkit-touch-callout: none !important;
     }}
     .stDataFrame {{
         background-color: {cfg['cor_fundo_tabela']} !important;
@@ -584,7 +586,6 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           st.success(
               f"Operação de {acao} registada com sucesso no setor **{setor_reg}**!"
           )
-          # Limpa o produto ativo após sucesso
           if "produto_lido_ativo" in st.session_state:
             del st.session_state["produto_lido_ativo"]
 
@@ -819,7 +820,6 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                 horizontal=True,
             )
 
-            # CAMPO DE LEITURA ATIVA POR BOTÃO NA SEPARAÇÃO
             col_s1, col_s2 = st.columns([3, 1])
             with col_s1:
               codigo_sep_input = st.text_input(
