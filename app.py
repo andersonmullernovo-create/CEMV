@@ -300,11 +300,6 @@ if menu == "⚙️ Painel do Administrador & Agenda":
   with tab_adm5:
     with st.container(border=True):
       st.subheader("💾 Backup e Restauro de Dados")
-      st.markdown(
-          "Transfira uma cópia de segurança do seu inventário atual em formato"
-          " CSV ou restaure dados anteriores."
-      )
-
       csv_data = df.to_csv(index=False).encode("utf-8")
       st.download_button(
           label="📥 Descarregar Backup do Stock (CSV)",
@@ -312,7 +307,6 @@ if menu == "⚙️ Painel do Administrador & Agenda":
           file_name=f"backup_estoque_{datetime.date.today()}.csv",
           mime="text/csv",
       )
-
       st.markdown("---")
       uploaded_backup = st.file_uploader(
           "Restaurar Stock através de Ficheiro CSV", type=["csv"]
@@ -471,225 +465,258 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           st.success("Movimento registado com sucesso!")
 
 
-# --- 4. GESTÃO DE PEDIDOS & CHECK-LIST (Com Câmara Traseira Forçada) ---
+# --- 4. GESTÃO DE PEDIDOS & CHECK-LIST (Com Janela Dedicada de Pedidos Gerados) ---
 elif menu == "📋 Gestão de Pedidos & Check-list":
   st.markdown("## 📋 Setor de Separação de Pedidos & Check-list")
   st.markdown(
-      "Tire foto do talão ou adicione itens manualmente para gerar a lista de"
-      " separação."
+      "Tire foto do talão ou adicione itens manualmente, gere o pedido e"
+      " gerencie a separação."
   )
 
-  with st.container(border=True):
-    st.subheader("📸 1. Criar Pedido (Via Câmara Traseira ou Manual)")
-    tipo_cap = st.radio(
-        "Origem do Pedido",
-        [
-            "Tirar Foto com a Câmara Traseira",
-            "Carregar Ficheiro",
-            "Apenas Inserção Manual",
-        ],
-        horizontal=True,
-    )
-    img_ped = None
-    if tipo_cap == "Tirar Foto com a Câmara Traseira":
-      # Força o uso da câmara traseira através do parâmetro facingMode
-      img_ped = st.camera_input(
-          "Aponte para o talão do pedido",
-          key="cam_traseira_talao",
-          help="Certifique-se de permitir o acesso à câmara no browser.",
-      )
-    elif tipo_cap == "Carregar Ficheiro":
-      img_ped = st.file_uploader("Ficheiro do talão", type=["png", "jpg"])
+  # Sistema de Abas Internas para alternar entre "Criar Novo Pedido" e "Ver Pedidos Salvos"
+  sub_tab1, sub_tab2 = st.tabs([
+      "📸 Criar Novo Pedido (Câmara / Manual)",
+      "📦 Ver Pedidos Salvos & Ativos",
+  ])
 
-    cli_nome = st.text_input(
-        "Nome do Cliente / Destino", placeholder="Ex: Neriah Comércio"
-    )
-
-    if img_ped:
-      st.image(img_ped, width=300)
-      st.success("Talão capturado com sucesso!")
-
-    st.markdown("---")
-    st.subheader("Adicionar Itens ao Pedido (Seleção ou Digitação Manual)")
-
-    if "temp_itens" not in st.session_state:
-      st.session_state.temp_itens = []
-
-    modo_add_ped = st.radio(
-        "Como adicionar o item?",
-        ["Selecionar do Stock", "Digitar Nome Manualmente"],
-        horizontal=True,
-        key="modo_add_pedido",
-    )
-
-    c_p1, c_p2 = st.columns([2, 1])
-    with c_p1:
-      if modo_add_ped == "Selecionar do Stock":
-        item_sel = st.selectbox(
-            "Produto do Stock", df["Produto"].tolist(), key="sel_item_ped"
-        )
-      else:
-        item_sel = st.text_input(
-            "Nome do Produto Manual / Personalizado", key="txt_item_ped_manual"
-        )
-    with c_p2:
-      qtd_sel = st.number_input(
-          "Quantidade", min_value=1, value=1, key="qtd_item_ped"
+  with sub_tab1:
+    with st.container(border=True):
+      st.subheader("1. Capturar ou Inserir Dados do Pedido")
+      tipo_cap = st.radio(
+          "Origem do Pedido",
+          [
+              "Tirar Foto com a Câmara Traseira",
+              "Carregar Ficheiro de Talão",
+              "Apenas Inserção Manual",
+          ],
+          horizontal=True,
       )
 
-    if st.button("Adicionar Item à Lista do Pedido"):
-      if item_sel and str(item_sel).strip():
-        st.session_state.temp_itens.append(
-            {"produto": str(item_sel).strip(), "qtd": qtd_sel}
+      img_ped = None
+      if tipo_cap == "Tirar Foto com a Câmara Traseira":
+        img_ped = st.camera_input(
+            "Aponte para o talão do pedido", key="cam_traseira_talao"
         )
-        st.success(f"Adicionado: {item_sel} ({qtd_sel} un)")
-      else:
-        st.error("Informe o nome do produto.")
-
-    if st.session_state.temp_itens:
-      st.write("**Itens no Pedido Atual:**")
-      for it in st.session_state.temp_itens:
-        st.write(f"- {it['produto']}: **{it['qtd']} un**")
-
-      if st.button("🚀 Gerar Setor de Separação para este Pedido"):
-        if cli_nome:
-          pid = f"Pedido_{datetime.datetime.now().strftime('%H%M%S')}"
-          st.session_state.pedidos_ativos[pid] = {
-              "cliente": cli_nome,
-              "itens": [
-                  {
-                      "produto": i["produto"],
-                      "qtd_pedida": i["qtd"],
-                      "qtd_separada": 0,
-                  }
-                  for i in st.session_state.temp_itens
-              ],
-              "concluido": False,
-          }
-          st.session_state.temp_itens = []
-          st.success(f"Setor de separação criado com ID: {pid}!")
-          st.rerun()
-        else:
-          st.error("Insira o nome do cliente.")
-
-  st.markdown("<br>", unsafe_allow_html=True)
-  st.markdown("### 📦 2. Setores de Separação Ativos (Leitor de Barras)")
-
-  if not st.session_state.pedidos_ativos:
-    st.info("Nenhum pedido em separação no momento.")
-  else:
-    for pid, pdata in st.session_state.pedidos_ativos.items():
-      stato = "✅ Separado" if pdata["concluido"] else "⏳ Em Separação"
-      with st.expander(
-          f"📦 {pid} — Cliente: **{pdata['cliente']}** [{stato}]",
-          expanded=not pdata["concluido"],
-      ):
-        scan_codigo = st.text_input(
-            f"🔍 Escanear Código de Barras do Produto ({pid})",
-            key=f"scan_sep_{pid}",
-            placeholder="Passe o leitor de barras para separar 1 unidade...",
+      elif tipo_cap == "Carregar Ficheiro de Talão":
+        img_ped = st.file_uploader(
+            "Ficheiro de imagem do talão", type=["png", "jpg", "jpeg"]
         )
-        if scan_codigo:
-          match_bar = df[df["Codigo_Barras"] == scan_codigo]
-          if not match_bar.empty:
-            nome_prod_encontrado = match_bar.iloc[0]["Produto"]
-            achou_no_pedido = False
-            for itm in pdata["itens"]:
-              if itm["produto"] == nome_prod_encontrado:
-                achou_no_pedido = True
-                if itm["qtd_separada"] < itm["qtd_pedida"]:
-                  itm["qtd_separada"] += 1
-                  st.success(
-                      f"✔️ Separado 1 unidade de {nome_prod_encontrado}! Progresso:"
-                      f" {itm['qtd_separada']}/{itm['qtd_pedida']}"
-                  )
-                  st.rerun()
-                else:
-                  st.warning(
-                      f"O item {nome_prod_encontrado} já está completo neste"
-                      " pedido!"
-                  )
-            if not achou_no_pedido:
-              st.error(
-                  f"O produto '{nome_prod_encontrado}' não pertence a este"
-                  " pedido!"
-              )
-          else:
-            st.error("Código de barras desconhecido!")
 
-        st.markdown("---")
-        todos_ok = True
-        for i_idx, item in enumerate(pdata["itens"]):
-          p_name = item["produto"]
-          m_qtd = item["qtd_pedida"]
-          a_qtd = item["qtd_separada"]
+      cli_nome = st.text_input(
+          "Nome do Cliente / Destino", placeholder="Ex: Neriah Comércio"
+      )
 
-          estilo_cor = (
-              "color: #28a745; font-weight: bold; background-color: #e8f5e9;"
-              " padding: 4px 8px; border-radius: 4px;"
-              if a_qtd >= m_qtd
-              else "color: #333;"
+      if img_ped is not None:
+        st.image(img_ped, width=300, caption="Talão Capturado")
+        st.success(
+            "📸 Imagem carregada! Adicione os itens correspondentes abaixo e"
+            " clique em Gerar Pedido."
+        )
+
+      st.markdown("---")
+      st.subheader("2. Adicionar Itens ao Pedido")
+
+      if "temp_itens" not in st.session_state:
+        st.session_state.temp_itens = []
+
+      modo_add_ped = st.radio(
+          "Como adicionar o item?",
+          ["Selecionar do Stock", "Digitar Nome Manualmente"],
+          horizontal=True,
+          key="modo_add_pedido",
+      )
+
+      c_p1, c_p2 = st.columns([2, 1])
+      with c_p1:
+        if modo_add_ped == "Selecionar do Stock":
+          item_sel = st.selectbox(
+              "Produto do Stock", df["Produto"].tolist(), key="sel_item_ped"
           )
+        else:
+          item_sel = st.text_input(
+              "Nome do Produto Manual / Personalizado",
+              key="txt_item_ped_manual",
+          )
+      with c_p2:
+        qtd_sel = st.number_input(
+            "Quantidade", min_value=1, value=1, key="qtd_item_ped"
+        )
 
-          col1, col2, col3 = st.columns([3, 2, 2])
-          with col1:
-            st.markdown(
-                f"<span style='{estilo_cor}'>{p_name}</span>",
-                unsafe_allow_html=True,
-            )
-          with col2:
-            st.markdown(
-                f"<span style='{estilo_cor}'>Separado: **{a_qtd}/{m_qtd}**</span>",
-                unsafe_allow_html=True,
-            )
-          with col3:
-            b_mais = st.button("➕", key=f"mais_{pid}_{i_idx}")
-            b_menos = st.button("➖", key=f"menos_{pid}_{i_idx}")
-            if b_mais and a_qtd < m_qtd:
-              item["qtd_separada"] += 1
-              st.rerun()
-            if b_menos and a_qtd > 0:
-              item["qtd_separada"] -= 1
-              st.rerun()
+      if st.button("➕ Adicionar Item à Lista do Pedido"):
+        if item_sel and str(item_sel).strip():
+          st.session_state.temp_itens.append(
+              {"produto": str(item_sel).strip(), "qtd": qtd_sel}
+          )
+          st.success(f"Adicionado: {item_sel} ({qtd_sel} un)")
+        else:
+          st.error("Informe o nome do produto.")
 
-          if a_qtd < m_qtd:
-            todos_ok = False
+      if st.session_state.temp_itens:
+        st.markdown("#### **Itens Adicionados no Pedido Atual:**")
+        for it in st.session_state.temp_itens:
+          st.write(f"- {it['produto']}: **{it['qtd']} un**")
 
         st.markdown("<br>", unsafe_allow_html=True)
-        if not todos_ok:
-          st.warning(
-              "⚠️ Separação em andamento. Escaneie os códigos de barras ou use"
-              " os botões para concluir."
-          )
-        else:
-          st.success(
-              "✨ **Todos os itens deste pedido foram separados com sucesso"
-              " (Verde)!**"
-          )
-          if not pdata["concluido"]:
-            if st.button(
-                f"📥 Confirmar e Dar Baixa Definitiva no Stock ({pid})",
-                key=f"baixar_{pid}",
-            ):
-              erro_stk = False
-              for item in pdata["itens"]:
-                p_n = item["produto"]
-                q_s = item["qtd_pedida"]
-                match_stk = df[df["Produto"] == p_n]
-                if not match_stk.empty:
-                  r_idx = match_stk.index[0]
-                  if df.loc[r_idx, "Quantidade"] >= q_s:
-                    df.loc[r_idx, "Quantidade"] -= q_s
-                  else:
-                    erro_stk = True
-                    st.error(f"Stock insuficiente para {p_n}!")
+        # BOTÃO EXPLICITO PARA GERAR O PEDIDO E ABRIR A JANELA DE SEPARAÇÃO
+        if st.button(
+            "🚀 Gerar Pedido e Abrir Janela de Separação", type="primary"
+        ):
+          if cli_nome and cli_nome.strip():
+            pid = f"Pedido_{datetime.datetime.now().strftime('%H%M%S')}"
+            st.session_state.pedidos_ativos[pid] = {
+                "cliente": cli_nome.strip(),
+                "data_criacao": datetime.datetime.now().strftime(
+                    "%Y-%m-%d %H:%M"
+                ),
+                "itens": [
+                    {
+                        "produto": i["produto"],
+                        "qtd_pedida": i["qtd"],
+                        "qtd_separada": 0,
+                    }
+                    for i in st.session_state.temp_itens
+                ],
+                "concluido": False,
+            }
+            st.session_state.temp_itens = []
+            st.success(
+                f"🎉 Pedido '{pid}' gerado com sucesso! Vá para a aba 'Ver"
+                " Pedidos Salvos & Ativos' para iniciar a separação."
+            )
+            st.rerun()
+          else:
+            st.error("Por favor, preencha o nome do cliente/destino.")
 
-              if not erro_stk:
-                pdata["concluido"] = True
-                st.success(
-                    "Baixa de stock efetuada com sucesso para todo o pedido!"
+  with sub_tab2:
+    st.subheader("📦 Lista de Todos os Pedidos Salvos e Ativos")
+
+    if not st.session_state.pedidos_ativos:
+      st.info(
+          "ℹ️ Nenhum pedido registado ou em separação no momento. Crie um na"
+          " aba ao lado."
+      )
+    else:
+      for pid, pdata in st.session_state.pedidos_ativos.items():
+        status_txt = (
+            "✅ Concluído (Separado)"
+            if pdata["concluido"]
+            else "⏳ Em Andamento (Separação)"
+        )
+        data_criacao = pdata.get("data_criacao", "Data não registada")
+
+        with st.expander(
+            f"📦 {pid} — Cliente: **{pdata['cliente']}** [{status_txt}]"
+            f" (Criado em: {data_criacao})",
+            expanded=not pdata["concluido"],
+        ):
+
+          # Leitor de código de barras para dar baixa item a item
+          scan_codigo = st.text_input(
+              f"🔍 Escanear Código de Barras do Produto ({pid})",
+              key=f"scan_sep_{pid}",
+              placeholder="Passe o leitor de barras para separar 1 unidade...",
+          )
+          if scan_codigo:
+            match_bar = df[df["Codigo_Barras"] == scan_codigo]
+            if not match_bar.empty:
+              nome_prod_encontrado = match_bar.iloc[0]["Produto"]
+              achou_no_pedido = False
+              for itm in pdata["itens"]:
+                if itm["produto"] == nome_prod_encontrado:
+                  achou_no_pedido = True
+                  if itm["qtd_separada"] < itm["qtd_pedida"]:
+                    itm["qtd_separada"] += 1
+                    st.success(
+                        f"✔️ Separado 1 unidade de {nome_prod_encontrado}! Progresso:"
+                        f" {itm['qtd_separada']}/{itm['qtd_pedida']}"
+                    )
+                    st.rerun()
+                  else:
+                    st.warning(
+                        f"O item {nome_prod_encontrado} já está completo neste"
+                        " pedido!"
+                    )
+              if not achou_no_pedido:
+                st.error(
+                    f"O produto '{nome_prod_encontrado}' não pertence a este"
+                    " pedido!"
                 )
+            else:
+              st.error("Código de barras desconhecido!")
+
+          st.markdown("---")
+          todos_ok = True
+          for i_idx, item in enumerate(pdata["itens"]):
+            p_name = item["produto"]
+            m_qtd = item["qtd_pedida"]
+            a_qtd = item["qtd_separada"]
+
+            estilo_cor = (
+                "color: #28a745; font-weight: bold; background-color: #e8f5e9;"
+                " padding: 4px 8px; border-radius: 4px;"
+                if a_qtd >= m_qtd
+                else "color: #333;"
+            )
+
+            col1, col2, col3 = st.columns([3, 2, 2])
+            with col1:
+              st.markdown(
+                  f"<span style='{estilo_cor}'>{p_name}</span>",
+                  unsafe_allow_html=True,
+              )
+            with col2:
+              st.markdown(
+                  f"<span style='{estilo_cor}'>Separado: **{a_qtd}/{m_qtd}**</span>",
+                  unsafe_allow_html=True,
+              )
+            with col3:
+              b_mais = st.button("➕", key=f"mais_{pid}_{i_idx}")
+              b_menos = st.button("➖", key=f"menos_{pid}_{i_idx}")
+              if b_mais and a_qtd < m_qtd:
+                item["qtd_separada"] += 1
                 st.rerun()
+              if b_menos and a_qtd > 0:
+                item["qtd_separada"] -= 1
+                st.rerun()
+
+            if a_qtd < m_qtd:
+              todos_ok = False
+
+          st.markdown("<br>", unsafe_allow_html=True)
+          if not todos_ok:
+            st.warning(
+                "⚠️ Separação em andamento. Escaneie os códigos de barras ou"
+                " utilize os botões manuais."
+            )
+          else:
+            st.success(
+                "✨ **Todos os itens deste pedido foram separados com sucesso"
+                " (Verde)!**"
+            )
+            if not pdata["concluido"]:
+              if st.button(
+                  f"📥 Confirmar e Dar Baixa Definitiva no Stock ({pid})",
+                  key=f"baixar_{pid}",
+              ):
+                erro_stk = False
+                for item in pdata["itens"]:
+                  p_n = item["produto"]
+                  q_s = item["qtd_pedida"]
+                  match_stk = df[df["Produto"] == p_n]
+                  if not match_stk.empty:
+                    r_idx = match_stk.index[0]
+                    if df.loc[r_idx, "Quantidade"] >= q_s:
+                      df.loc[r_idx, "Quantidade"] -= q_s
+                    else:
+                      erro_stk = True
+                      st.error(f"Stock insuficiente para {p_n}!")
+
+                if not erro_stk:
+                  pdata["concluido"] = True
+                  st.success(
+                      "Baixa de stock efetuada com sucesso para todo o pedido!"
+                  )
+                  st.rerun()
 
 
 # --- 5. MENSAGENS ---
