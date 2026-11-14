@@ -397,7 +397,7 @@ elif menu == "🍲 Consultar Stock & Setores":
 
 # --- 3. ENTRADAS E SAÍDAS ---
 elif menu == "➕ Entradas / Saídas (Expedição)":
-  st.markdown("## ➕ Entradas, Saídas e Registo por Scanner")
+  st.markdown("## ➕ Entradas, Saídas e Leitura Ótica de Etiquetas")
 
   if not permissoes_atuais["pode_movimentar"]:
     st.error("Sem permissão para movimentar stock.")
@@ -477,8 +477,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           "Método de Identificação",
           [
               "Selecionar na Lista",
-              "Carregar / Tirar Foto com Câmara do Telemóvel",
-              "Digitar Código de Barras",
+              "Leitor Ótico / Bipagem de Etiqueta",
           ],
           horizontal=True,
       )
@@ -489,48 +488,26 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
         produto_selecionado = st.selectbox(
             "Produto", df["Produto"].tolist(), key="sel_mov_l"
         )
-      elif (
-          modo_mov == "Carregar / Tirar Foto com Câmara do Telemóvel"
-      ):
-        st.info(
-            "📸 Use o botão abaixo para tirar foto com a câmara traseira ou"
-            " carregar o talão/código:"
-        )
-        foto_scanner = st.file_uploader(
-            "Carregar ou Fotografar Código/Talão",
-            type=["png", "jpg", "jpeg"],
-            key="file_scanner_entrada",
-        )
-        if foto_scanner is not None:
-          st.image(foto_scanner, width=250)
-          bc_foto = st.text_input(
-              "Confirme ou digite o código de barras correspondente:",
-              placeholder="Ex: 789101",
-          )
-          if bc_foto:
-            match = df[df["Codigo_Barras"] == bc_foto]
-            if not match.empty:
-              produto_selecionado = match.iloc[0]["Produto"]
-              st.success(
-                  f"✔️ Produto detetado: **{produto_selecionado}** (Setor:"
-                  f" {match.iloc[0]['Setor']})"
-              )
-            else:
-              st.error("Código não encontrado no stock.")
       else:
+        st.info(
+            "⚡ **Modo de Leitura Rápida:** Posicione o cursor abaixo e passe o"
+            " leitor ótico ou digite o código de barras da etiqueta:"
+        )
         bc = st.text_input(
-            "Digite o Código de Barras", placeholder="Ex: 789101..."
+            "Código de Barras (Leitura Ótica)",
+            placeholder="Passe a etiqueta ou digite...",
+            key="input_leitor_otico_entrada",
         )
         if bc:
           match = df[df["Codigo_Barras"] == bc]
           if not match.empty:
             produto_selecionado = match.iloc[0]["Produto"]
             st.success(
-                f"Encontrado: **{produto_selecionado}** (Setor:"
+                f"✔️ Produto detetado: **{produto_selecionado}** (Setor:"
                 f" {match.iloc[0]['Setor']})"
             )
           else:
-            st.error("Código de barras não registado no sistema.")
+            st.error("⚠️ Código de barras não encontrado no stock.")
 
       if produto_selecionado:
         st.markdown("---")
@@ -600,12 +577,12 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
 elif menu == "📋 Gestão de Pedidos & Check-list":
   st.markdown("## 📋 Setor de Separação de Pedidos & Check-list")
   st.markdown(
-      "Importe o talão, gere o pedido e separe os itens por setor usando o"
-      " leitor ou telemóvel."
+      "Importe o talão, gere o pedido e separe os itens rapidamente com o"
+      " leitor ótico de etiquetas."
   )
 
   sub_tab1, sub_tab2 = st.tabs([
-      "📸 Criar Novo Pedido (Câmara / Manual)",
+      "📸 Criar Novo Pedido (Importação / Manual)",
       "📦 Ver Pedidos Salvos & Ativos",
   ])
 
@@ -615,7 +592,6 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       tipo_cap = st.radio(
           "Origem do Pedido",
           [
-              "Tirar Foto com a Câmara do Telemóvel",
               "Carregar Ficheiro de Talão",
               "Apenas Inserção Manual",
           ],
@@ -623,17 +599,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       )
 
       img_ped = None
-      if tipo_cap == "Tirar Foto com a Câmara do Telemóvel":
-        st.info(
-            "💡 Dica: Ao carregar abaixo, o seu telemóvel permitirá escolher"
-            " a câmara traseira (com foco e flash) diretamente."
-        )
-        img_ped = st.file_uploader(
-            "Tirar / Selecionar Foto do Talão",
-            type=["png", "jpg", "jpeg"],
-            key="cam_traseira_talao",
-        )
-      elif tipo_cap == "Carregar Ficheiro de Talão":
+      if tipo_cap == "Carregar Ficheiro de Talão":
         img_ped = st.file_uploader(
             "Ficheiro de imagem do talão", type=["png", "jpg", "jpeg"]
         )
@@ -838,9 +804,9 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
             )
 
             scan_codigo = st.text_input(
-                f"🔍 Escanear / Digitar Código de Barras ({pid})",
+                f"🔍 Leitura Ótica de Etiqueta / Código ({pid})",
                 key=f"scan_sep_{pid}",
-                placeholder="Passe o leitor ou digite o código...",
+                placeholder="Passe o leitor na etiqueta do produto...",
             )
             if scan_codigo:
               match_bar = df[df["Codigo_Barras"] == scan_codigo]
@@ -869,7 +835,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                       f" {setor_encontrado}) não pertence a este pedido!"
                   )
               else:
-                st.error("Código de barras desconhecido no sistema!")
+                st.error("⚠️ Código de barras desconhecido no sistema!")
 
           st.markdown("---")
           todos_ok = True
@@ -931,8 +897,8 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
             )
           elif not todos_ok:
             st.warning(
-                "⚠️ Separação em andamento. Leia os códigos de barras no setor"
-                " correspondente ou use os botões."
+                "⚠️ Separação em andamento. Passe a etiqueta do produto no"
+                " leitor ótico ou use os botões."
             )
           else:
             if "Automática" in modo_baixa:
