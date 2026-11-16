@@ -19,6 +19,8 @@ ARQ_USERS = "users_rbm_dados.json"
 ARQ_HIST = "historico_rbm_dados.csv"
 ARQ_CONFIG = "config_visual_dados.json"
 ARQ_MENSAGENS = "mensagens_rbm_dados.json"
+ARQ_CLIENTES = "clientes_rbm_dados.json"
+ARQ_CLIENTES_PEDIDOS = "clientes_pedidos_dados.json"
 
 TEMAS_FUNDO = {
     "Gradiente Azul Moderno": "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
@@ -61,6 +63,16 @@ def salvar_config():
 def salvar_mensagens():
   with open(ARQ_MENSAGENS, "w", encoding="utf-8") as f:
     json.dump(st.session_state.mensagens, f, ensure_ascii=False)
+
+
+def salvar_clientes():
+  with open(ARQ_CLIENTES, "w", encoding="utf-8") as f:
+    json.dump(st.session_state.clientes, f, ensure_ascii=False)
+
+
+def salvar_clientes_pedidos():
+  with open(ARQ_CLIENTES_PEDIDOS, "w", encoding="utf-8") as f:
+    json.dump(st.session_state.clientes_pedidos, f, ensure_ascii=False)
 
 
 # --- INICIALIZAÇÃO COM CARREGAMENTO PERSISTENTE ---
@@ -123,6 +135,30 @@ if "mensagens" not in st.session_state:
     st.session_state.mensagens = []
     salvar_mensagens()
 
+if "clientes" not in st.session_state:
+  if os.path.exists(ARQ_CLIENTES):
+    with open(ARQ_CLIENTES, "r", encoding="utf-8") as f:
+      st.session_state.clientes = json.load(f)
+  else:
+    st.session_state.clientes = [
+        {
+            "razao_social": "Neriah Comercio de Alimentos LTDA",
+            "nome_fantasia": "Neriah Comércio",
+            "cnpj": "12.345.678/0001-99",
+            "endereco": "Rua Principal, 100 - Florianópolis - SC",
+            "contacto": "(48) 99999-9999",
+        }
+    ]
+    salvar_clientes()
+
+if "clientes_pedidos" not in st.session_state:
+  if os.path.exists(ARQ_CLIENTES_PEDIDOS):
+    with open(ARQ_CLIENTES_PEDIDOS, "r", encoding="utf-8") as f:
+      st.session_state.clientes_pedidos = json.load(f)
+  else:
+    st.session_state.clientes_pedidos = []
+    salvar_clientes_pedidos()
+
 if "agenda_eventos" not in st.session_state:
   st.session_state.agenda_eventos = []
 
@@ -162,12 +198,17 @@ if "estoque" not in st.session_state:
         "Setor": ["Secos e Molhados", "Secos e Molhados", "Câmara Fria"],
         "Quantidade": [40, 30, 20],
         "Limite_Minimo": [10, 25, 5],
+        "Lote": ["LOT-2026-A", "LOT-2026-B", "LOT-2026-C"],
         "Fabricacao": ["2026-10-01", "2026-09-15", "2026-10-10"],
         "Validade": ["2026-11-15", "2027-05-20", "2026-11-10"],
         "Ultima_Modificacao": ["2026-11-01", "2026-11-05", "2026-11-10"],
         "Modificado_Por": ["admin", "operador", "admin"],
     })
     salvar_estoque()
+
+# Garantir colunas de lote se o CSV antigo não as tiver
+if "Lote" not in st.session_state.estoque.columns:
+  st.session_state.estoque["Lote"] = "LOT-GERAL"
 
 # Capturar código vindo do leitor ótico da câmara em tempo real
 if "scanned_code" in st.query_params:
@@ -297,7 +338,9 @@ if num_novas > 0:
 opcoes_menu = [
     "🍲 Consultar Stock & Setores",
     "➕ Entradas / Saídas (Expedição)",
+    "🏷️ Gerar Etiquetas (Lotes)",
     "📋 Gestão de Pedidos & Check-list",
+    "👥 Gestão de Clientes & Pedidos",
     f"💬 Mensagens & Bate-Papo ({num_novas})",
     "📊 Romaneios & Relatórios",
     "📜 Histórico de Auditoria",
@@ -575,15 +618,9 @@ elif menu == "⚙️ Configuração":
 
   with col_cfg2:
     st.subheader("👁️ Pré-visualização ao Vivo")
-    st.markdown(
-        "Veja abaixo como o painel e os elementos ficarão com as opções"
-        " selecionadas:"
-    )
     bg_preview_css = TEMAS_FUNDO.get(
         prev_fundo_app, TEMAS_FUNDO["Gradiente Azul Moderno"]
     )
-    
-    # Pré-visualização formatada em segurança (sem f-string complexa)
     preview_html = """
         <div style="background: {}; padding: 25px; border-radius: 14px; border: 2px dashed #007bff; color: {}; font-size: {}; font-family: sans-serif;">
             <h3 style="margin-top:0; color: {};">🔍 Exemplo de Cartão RBM</h3>
@@ -606,13 +643,31 @@ elif menu == "⚙️ Configuração":
     st.markdown(preview_html, unsafe_allow_html=True)
 
 
-# --- 2. CONSULTAR STOCK ---
+# --- 2. CONSULTAR STOCK & KPIs (PROPOSTA 2) ---
 elif menu == "🍲 Consultar Stock & Setores":
-  st.markdown("## 🍲 Consulta de Stock por Setor")
+  st.markdown("## 🍲 Consulta de Stock, Lotes & Indicadores (KPIs)")
+
+  # PROPOSTA 2: Dashboard de KPIs em Tempo Real
+  hoje_str = datetime.date.today().strftime("%Y-%m-%d")
+  total_skus = len(df)
+  total_qtd = int(df["Quantidade"].sum()) if not df.empty else 0
+  criticos = len(df[df["Quantidade"] <= df["Limite_Minimo"]])
+  vencidos = len(df[df["Validade"] <= hoje_str])
+
+  k1, k2, k3, k4 = st.columns(4)
+  k1.metric("📦 Total de Produtos (SKUs)", total_skus)
+  k2.metric("📊 Quantidade Total em Stock", total_qtd)
+  k3.metric("⚠️ Abaixo do Mínimo", criticos, delta_color="inverse")
+  k4.metric("🚨 Lotes Vencidos / Vencendo", vencidos, delta_color="inverse")
+
+  st.markdown("---")
+
   setor_filtro = st.selectbox(
       "Filtrar por Setor", ["Todos os Setores"] + st.session_state.setores
   )
-  pesquisa = st.text_input("🔍 Pesquisar por Produto ou Código", "")
+  pesquisa = st.text_input(
+      "🔍 Pesquisar por Produto, Lote ou Código de Barras", ""
+  )
 
   df_f = df.copy()
   if setor_filtro != "Todos os Setores":
@@ -621,13 +676,13 @@ elif menu == "🍲 Consultar Stock & Setores":
     df_f = df_f[
         df_f["Produto"].str.contains(pesquisa, case=False, na=False)
         | df_f["Codigo_Barras"].str.contains(pesquisa, case=False, na=False)
+        | df_f["Lote"].str.contains(pesquisa, case=False, na=False)
     ]
 
 
   def estilo_alerta(row):
-    hoje = datetime.date.today().strftime("%Y-%m-%d")
-    val = row.get("Validade", hoje)
-    if row["Quantidade"] <= row["Limite_Minimo"] or val <= hoje:
+    val = row.get("Validade", hoje_str)
+    if row["Quantidade"] <= row["Limite_Minimo"] or val <= hoje_str:
       return [
           "color: red; font-weight: bold; background-color: #ffe6e6;"
       ] * len(row)
@@ -639,9 +694,11 @@ elif menu == "🍲 Consultar Stock & Setores":
   )
 
 
-# --- 3. ENTRADAS E SAÍDAS ---
+# --- 3. ENTRADAS E SAÍDAS (COM RASTREABILIDADE DE LOTES - PROPOSTA 3) ---
 elif menu == "➕ Entradas / Saídas (Expedição)":
-  st.markdown("## ➕ Entradas, Saídas e Leitura por Câmara (Tempo Real)")
+  st.markdown(
+      "## ➕ Entradas, Saídas, Leitura por Câmara & Controlo FIFO (Lotes)"
+  )
 
   if not permissoes_atuais["pode_movimentar"]:
     st.error("Sem permissão para movimentar stock.")
@@ -649,14 +706,17 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
     if st.session_state.perfil == "Administrador":
       with st.container(border=True):
         cadastrar_novo_manual = st.checkbox(
-            "➕ [Admin] Adicionar Novo Produto Manualmente ao Catálogo"
+            "➕ [Admin] Adicionar Novo Produto / Lote ao Catálogo"
         )
         if cadastrar_novo_manual:
-          st.subheader("Registo Manual de Novo Item no Catálogo")
+          st.subheader("Registo de Novo Item / Lote no Catálogo")
           col_m1, col_m2 = st.columns(2)
           with col_m1:
             m_nome = st.text_input("Nome do Produto")
             m_cod = st.text_input("Código de Barras")
+            m_lote = st.text_input(
+                "Número do Lote", value=f"LOT-{datetime.date.today().year}-01"
+            )
             m_desc = st.text_area("Descrição")
           with col_m2:
             m_emb = st.number_input(
@@ -674,14 +734,14 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           col_d1, col_d2 = st.columns(2)
           with col_d1:
             m_fab = st.date_input(
-                "Data de Fabricação (Novo Item)", datetime.date.today()
+                "Data de Fabricação", datetime.date.today(), key="novo_fab"
             )
           with col_d2:
             m_val = st.date_input(
-                "Data de Validade (Novo Item)", datetime.date.today()
+                "Data de Validade", datetime.date.today(), key="novo_val"
             )
 
-          if st.button("Guardar Novo Produto Manual"):
+          if st.button("Guardar Novo Produto / Lote"):
             if m_nome and m_cod:
               nova_l = pd.DataFrame({
                   "Codigo_Barras": [m_cod],
@@ -692,6 +752,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
                   "Setor": [m_setor],
                   "Quantidade": [0],
                   "Limite_Minimo": [m_min],
+                  "Lote": [m_lote],
                   "Fabricacao": [str(m_fab)],
                   "Validade": [str(m_val)],
                   "Ultima_Modificacao": [
@@ -704,21 +765,29 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
               )
               salvar_estoque()
               st.success(
-                  f"Produto adicionado ao setor '{m_setor}' e guardado com"
-                  " sucesso!"
+                  f"Produto e Lote '{m_lote}' registados com sucesso no setor"
+                  f" '{m_setor}'!"
               )
               st.rerun()
             else:
               st.error("Preencha o nome e o código de barras.")
-    else:
-      st.info(
-          "ℹ️ *Nota:* O registo de novos produtos no catálogo geral é restrito"
-          " ao perfil de Administrador."
-      )
 
     st.markdown("<br>", unsafe_allow_html=True)
     with st.container(border=True):
-      st.subheader("📦 Movimentar Stock (Entrada / Saída)")
+      st.subheader("📦 Movimentar Stock (Entrada / Saída com Regra FIFO)")
+
+      # PROPOSTA 3: Sugestão baseada em FIFO (lote mais antigo a vencer primeiro)
+      if not df.empty:
+        df_fifo = df.sort_values(by="Validade", ascending=True)
+        produto_sugestao = df_fifo.iloc[0]["Produto"]
+        lote_sugestao = df_fifo.iloc[0]["Lote"]
+        val_sugestao = df_fifo.iloc[0]["Validade"]
+        st.info(
+            f"💡 **Recomendação FIFO (Primeiro a Vencer):** O lote mais antigo"
+            f" a expirar é **{lote_sugestao}** do produto **{produto_sugestao}**"
+            f" (Validade: {val_sugestao}). Priorize a expedição deste lote!"
+        )
+
       modo_mov = st.radio(
           "Método de Identificação",
           [
@@ -751,11 +820,9 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
             <script src="https://unpkg.com/html5-qrcode"></script>
             <script>
             let html5QrCode = null;
-
             function startScanner() {
                 document.getElementById('start-btn').style.display = 'none';
                 document.getElementById('stop-btn').style.display = 'block';
-                
                 html5QrCode = new Html5Qrcode("reader");
                 html5QrCode.start(
                     { facingMode: "environment" },
@@ -774,7 +841,6 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
                     document.getElementById('stop-btn').style.display = 'none';
                 });
             }
-
             function stopScanner() {
                 if (html5QrCode) {
                     html5QrCode.stop().then(() => {
@@ -793,8 +859,8 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           if not match.empty:
             produto_selecionado = match.iloc[0]["Produto"]
             st.success(
-                f"🎯 Produto Encontrado: **{produto_selecionado}** (Setor:"
-                f" {match.iloc[0]['Setor']})"
+                f"🎯 Produto Encontrado: **{produto_selecionado}** (Lote:"
+                f" {match.iloc[0].get('Lote', 'N/A')})"
             )
           else:
             st.error("⚠️ Código de barras detetado não consta no stock.")
@@ -807,8 +873,8 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           if not match.empty:
             produto_selecionado = match.iloc[0]["Produto"]
             st.success(
-                f"Encontrado: **{produto_selecionado}** (Setor:"
-                f" {match.iloc[0]['Setor']})"
+                f"Encontrado: **{produto_selecionado}** (Lote:"
+                f" {match.iloc[0].get('Lote', 'N/A')})"
             )
           else:
             st.error("Código de barras não registado no sistema.")
@@ -821,21 +887,21 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
             horizontal=True,
         )
 
-        col_q1, col_q2 = st.columns(2)
+        col_q1, col_q2, col_q3 = st.columns(3)
         with col_q1:
           qtd_op = st.number_input(
               "Quantidade a Movimentar", min_value=1, value=1, key="qtd_mov_val"
           )
         with col_q2:
+          novo_lote_mov = st.text_input(
+              "Nº do Lote do Lote", value="LOT-2026-X"
+          )
+        with col_q3:
           data_fab_mov = st.date_input(
-              "Data de Fabricação do Lote",
-              datetime.date.today(),
-              key="fab_mov_dt",
+              "Fabricação", datetime.date.today(), key="fab_mov_dt"
           )
           data_val_mov = st.date_input(
-              "Data de Validade do Lote",
-              datetime.date.today(),
-              key="val_mov_dt",
+              "Validade", datetime.date.today(), key="val_mov_dt"
           )
 
         if st.button("🚀 Confirmar e Registar Movimento", type="primary"):
@@ -845,6 +911,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
 
           if "Recebimento" in tipo_op:
             df.loc[idx, "Quantidade"] += qtd_op
+            df.loc[idx, "Lote"] = novo_lote_mov
             df.loc[idx, "Fabricacao"] = str(data_fab_mov)
             df.loc[idx, "Validade"] = str(data_val_mov)
             acao = "Recebimento"
@@ -863,7 +930,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
               [[
                   data_atual,
                   st.session_state.username,
-                  f"{acao} (Setor {setor_reg})",
+                  f"{acao} (Setor {setor_reg} - Lote {novo_lote_mov})",
                   produto_selecionado,
                   qtd_op,
               ]],
@@ -877,20 +944,66 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           salvar_historico()
 
           st.success(
-              f"Operação de {acao} registada com sucesso no setor **{setor_reg}**!"
+              f"Operação de {acao} registada com sucesso no setor"
+              f" **{setor_reg}**!"
           )
           if "codigo_lido_ativo" in st.session_state:
             del st.session_state["codigo_lido_ativo"]
 
 
+# --- 3.1 GERAR ETIQUETAS DE CÓDIGOS DE BARRAS (PROPOSTA 1) ---
+elif menu == "🏷️ Gerar Etiquetas (Lotes)":
+  st.markdown("## 🏷️ Módulo de Geração e Impressão de Etiquetas de Lotes")
+  st.markdown(
+      "Selecione um produto abaixo para gerar cartões de etiquetas prontos a"
+      " imprimir para colar nas caixas ou produtos acabados."
+  )
+
+  if df.empty:
+    st.info("Nenhum produto cadastrado.")
+  else:
+    prod_etq = st.selectbox(
+        "Selecione o Produto para Etiqueta", df["Produto"].tolist()
+    )
+    qtd_etiquetas = st.number_input(
+        "Número de Cópias de Etiquetas", min_value=1, value=5
+    )
+
+    row_prod = df[df["Produto"] == prod_etq].iloc[0]
+    c_barras = row_prod["Codigo_Barras"]
+    lote_prod = row_prod.get("Lote", "N/A")
+    val_prod = row_prod.get("Validade", "N/A")
+    setor_prod = row_prod["Setor"]
+
+    st.markdown("---")
+    st.subheader("👁️ Pré-visualização da Etiqueta Térmica")
+
+    etiquetas_html = ""
+    for _ in range(int(qtd_etiquetas)):
+      etiquetas_html += f"""
+            <div style="display: inline-block; width: 280px; border: 2px dashed #333; padding: 12px; margin: 8px; border-radius: 8px; font-family: monospace; background: white; color: black;">
+                <h4 style="margin: 0 0 5px 0; text-align: center; font-size: 15px;">🍲 RBM ALIMENTOS</h4>
+                <hr style="border: 0.5px solid #333;">
+                <b>Prod:</b> {prod_etq}<br>
+                <b>Setor:</b> {setor_prod}<br>
+                <b>Lote:</b> {lote_prod} | <b>Val:</b> {val_prod}<br>
+                <div style="text-align: center; margin-top: 8px; font-size: 20px; font-weight: bold; letter-spacing: 3px;">|||| | |||||| || |</div>
+                <div style="text-align: center; font-size: 12px;">{c_barras}</div>
+            </div>
+            """
+
+    st.markdown(etiquetas_html, unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.info(
+        "💡 **Dica de Impressão:** Pode pressionar **Ctrl + P** no seu navegador"
+        " para imprimir esta página diretamente numa impressora de etiquetas"
+        " térmica ou comum."
+    )
+
+
 # --- 4. GESTÃO DE PEDIDOS & CHECK-LIST ---
 elif menu == "📋 Gestão de Pedidos & Check-list":
   st.markdown("## 📋 Setor de Separação de Pedidos & Check-list")
-  st.markdown(
-      "Importe o talão, gere o pedido e separe os itens com leitor ótico ou"
-      " câmara."
-  )
-
   sub_tab1, sub_tab2 = st.tabs([
       "📸 Criar Novo Pedido (Importação / Manual)",
       "📦 Ver Pedidos Salvos & Ativos",
@@ -901,10 +1014,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       st.subheader("1. Capturar ou Inserir Dados do Pedido")
       tipo_cap = st.radio(
           "Origem do Pedido",
-          [
-              "Carregar Ficheiro de Talão",
-              "Apenas Inserção Manual",
-          ],
+          ["Carregar Ficheiro de Talão", "Apenas Inserção Manual"],
           horizontal=True,
       )
 
@@ -926,7 +1036,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       st.markdown("---")
       st.info(
           "⚡ **Atalho de Importação:** Clique no botão abaixo para carregar"
-          f" automaticamente todos os 22 itens do talão da Neriah[span_0](start_span)[span_0](end_span)."
+          " automaticamente todos os 22 itens do talão da Neriah."
       )
       if st.button(
           "⚡ [Importação Automática] Carregar Itens do Talão da Neriah",
@@ -1035,12 +1145,8 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
 
   with sub_tab2:
     st.subheader("📦 Lista de Todos os Pedidos Salvos e Ativos")
-
     if not st.session_state.pedidos_ativos:
-      st.info(
-          "ℹ️ Nenhum pedido registado ou em separação no momento. Crie um na"
-          " aba ao lado."
-      )
+      st.info("Nenhum pedido registado ou em separação no momento.")
     else:
 
       def executar_baixa_pedido(pid_alvo, dados_pedido):
@@ -1203,51 +1309,224 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
           st.markdown("<br>", unsafe_allow_html=True)
 
           if pdata["concluido"]:
-            st.success(
-                "✅ **Pedido Finalizado:** Os itens foram removidos com sucesso"
-                " dos respetivos setores e registados no histórico."
-            )
+            st.success("✅ **Pedido Finalizado e Baixado nos Setores!**")
           elif not todos_ok:
-            st.warning(
-                "⚠️ Separação em andamento. Leia os códigos de barras no setor"
-                " correspondente ou use os botões."
-            )
+            st.warning("⚠️ Separação em andamento.")
           else:
             if "Automática" in modo_baixa:
               sucesso = executar_baixa_pedido(pid, pdata)
               if sucesso:
-                st.success(
-                    "⚡ **Baixa Automática por Setor Concluída!** Os itens foram"
-                    " retirados dos seus setores de origem."
-                )
+                st.success("⚡ **Baixa Automática Concluída!**")
                 st.rerun()
             else:
-              st.success(
-                  "✨ **Todos os itens separados (Verde)!** Pronto para"
-                  " conferência."
-              )
               if st.button(
-                  f"📥 Confirmar e Dar Baixa Manual nos Setores ({pid})",
+                  f"📥 Confirmar e Dar Baixa Manual ({pid})",
                   key=f"baixar_{pid}",
                   type="primary",
               ):
                 sucesso = executar_baixa_pedido(pid, pdata)
                 if sucesso:
-                  st.success(
-                      "✅ Baixa manual efetuada com sucesso nos setores de"
-                      " origem!"
-                  )
+                  st.success("✅ Baixa efetuada!")
                   st.rerun()
 
 
-# --- 5. CENTRAL DE MENSAGENS & BATE-PAPO INTERATIVO ---
+# --- 5. GESTÃO DE CLIENTES & PEDIDOS ---
+elif menu == "👥 Gestão de Clientes & Pedidos":
+  st.markdown("## 👥 Gestão de Clientes & Controlo de Pedidos")
+  tab_cli1, tab_cli2, tab_cli3 = st.tabs([
+      "🏢 Cadastrar & Listar Clientes",
+      "📦 Controlo de Pedidos dos Clientes",
+      "📊 Relatório Mensal por Cliente",
+  ])
+
+  with tab_cli1:
+    with st.container(border=True):
+      st.subheader("➕ Registar Novo Cliente")
+      c_razao = st.text_input("Razão Social")
+      c_fantasia = st.text_input("Nome Fantasia")
+      c_cnpj = st.text_input("CNPJ", placeholder="00.000.000/0001-00")
+      c_end = st.text_area("Endereço Completo")
+      c_cont = st.text_input("Contacto (Telefone / E-mail)")
+
+      if st.button("💾 Guardar Novo Cliente", type="primary"):
+        if c_razao and c_cnpj:
+          novo_c = {
+              "razao_social": c_razao,
+              "nome_fantasia": c_fantasia if c_fantasia else c_razao,
+              "cnpj": c_cnpj,
+              "endereco": c_end,
+              "contacto": c_cont,
+          }
+          st.session_state.clientes.append(novo_c)
+          salvar_clientes()
+          st.success(f"Cliente '{c_razao}' registado com sucesso!")
+          st.rerun()
+        else:
+          st.error("Preencha a Razão Social e o CNPJ.")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("📋 Lista de Clientes Registados")
+    if not st.session_state.clientes:
+      st.info("Nenhum cliente registado.")
+    else:
+      for idx, cli in enumerate(st.session_state.clientes):
+        with st.container(border=True):
+          col_a, col_b = st.columns([3, 1])
+          with col_a:
+            st.write(
+                f"🏢 **{cli['razao_social']}** (Fantasia:"
+                f" *{cli['nome_fantasia']}*)"
+            )
+            st.caption(
+                f"CNPJ: {cli['cnpj']} | Endereço: {cli['endereco']} |"
+                f" Contacto: {cli['contacto']}"
+            )
+          with col_b:
+            if st.button("🗑️ Eliminar", key=f"del_cli_{idx}"):
+              st.session_state.clientes.pop(idx)
+              salvar_clientes()
+              st.success("Cliente eliminado!")
+              st.rerun()
+
+  with tab_cli2:
+    with st.container(border=True):
+      st.subheader("📦 Registar Pedido para Cliente")
+      if not st.session_state.clientes:
+        st.warning("⚠️ Cadastre um cliente primeiro.")
+      else:
+        lista_nomes_clientes = [
+            c["razao_social"] for c in st.session_state.clientes
+        ]
+        sel_cliente_ped = st.selectbox(
+            "Selecione o Cliente", lista_nomes_clientes
+        )
+        data_pedido_cli = st.date_input(
+            "Data do Pedido", datetime.date.today(), key="dt_ped_cli"
+        )
+
+        if "itens_cli_temp" not in st.session_state:
+          st.session_state.itens_cli_temp = []
+
+        st.markdown("---")
+        col_ip1, col_ip2 = st.columns([2, 1])
+        with col_ip1:
+          prod_escolhido = st.selectbox(
+              "Produto do Stock", df["Produto"].tolist(), key="sel_p_cli"
+          )
+        with col_ip2:
+          qtd_escolhida = st.number_input(
+              "Quantidade", min_value=1, value=1, key="q_p_cli"
+          )
+
+        if st.button("➕ Adicionar Item ao Pedido do Cliente"):
+          st.session_state.itens_cli_temp.append(
+              {"produto": prod_escolhido, "quantidade": qtd_escolhida}
+          )
+          st.success(f"Adicionado: {prod_escolhido} ({qtd_escolhida} un)")
+
+        if st.session_state.itens_cli_temp:
+          st.markdown("**Itens no Pedido:**")
+          for it in st.session_state.itens_cli_temp:
+            st.write(f"- {it['produto']}: **{it['quantidade']} un**")
+
+          if st.button(
+              "🚀 Finalizar e Registar Pedido do Cliente", type="primary"
+          ):
+            num_ped_cli = (
+                f"PC_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
+            novo_reg_ped = {
+                "id_pedido": num_ped_cli,
+                "cliente": sel_cliente_ped,
+                "data": str(data_pedido_cli),
+                "mes_ano": data_pedido_cli.strftime("%Y-%m"),
+                "itens": st.session_state.itens_cli_temp,
+                "status": "Registado / Em Separação",
+            }
+            st.session_state.clientes_pedidos.append(novo_reg_ped)
+            salvar_clientes_pedidos()
+            st.session_state.itens_cli_temp = []
+            st.success(f"🎉 Pedido '{num_ped_cli}' registado com sucesso!")
+            st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.subheader("📦 Histórico de Pedidos de Clientes")
+    if not st.session_state.clientes_pedidos:
+      st.info("Nenhum pedido de cliente registado.")
+    else:
+      for cp in st.session_state.clientes_pedidos:
+        with st.container(border=True):
+          st.write(
+              f"📦 **{cp['id_pedido']}** — Cliente: **{cp['cliente']}** | Data:"
+              f" {cp['data']} | Status: *{cp['status']}*"
+          )
+          for i in cp["itens"]:
+            st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;• {i['produto']}: {i['quantidade']} un")
+
+  with tab_cli3:
+    with st.container(border=True):
+      st.subheader("📊 Relatório Mensal de Pedidos por Cliente")
+      if not st.session_state.clientes:
+        st.info("Nenhum cliente registado.")
+      else:
+        lista_nomes_clientes = [
+            c["razao_social"] for c in st.session_state.clientes
+        ]
+        filtro_cli_rel = st.selectbox(
+            "Selecionar Cliente", lista_nomes_clientes, key="rel_cli_sel"
+        )
+        mes_atual_str = datetime.date.today().strftime("%Y-%m")
+        filtro_mes = st.text_input(
+            "Filtrar por Mês e Ano (AAAA-MM)", value=mes_atual_str
+        )
+
+        pedidos_filtrados = [
+            p
+            for p in st.session_state.clientes_pedidos
+            if p["cliente"] == filtro_cli_rel
+            and p.get("mes_ano", p["data"][:7]) == filtro_mes
+        ]
+
+        st.markdown(
+            f"### Relatório para **{filtro_cli_rel}** no período:"
+            f" **{filtro_mes}**"
+        )
+        st.write(f"Total de pedidos no mês: **{len(pedidos_filtrados)}**")
+
+        if pedidos_filtrados:
+          dados_tabela = []
+          for ped in pedidos_filtrados:
+            for itm in ped["itens"]:
+              dados_tabela.append({
+                  "ID Pedido": ped["id_pedido"],
+                  "Data": ped["data"],
+                  "Produto": itm["produto"],
+                  "Quantidade": itm["quantidade"],
+                  "Status": ped["status"],
+              })
+
+          df_rel = pd.DataFrame(dados_tabela)
+          st.dataframe(df_rel, use_container_width=True)
+
+          csv_rel = df_rel.to_csv(index=False).encode("utf-8")
+          st.download_button(
+              label=(
+                  f"📥 Descarregar Relatório de {filtro_cli_rel}"
+                  f" ({filtro_mes}) em CSV"
+              ),
+              data=csv_rel,
+              file_name=(
+                  f"relatorio_cliente_{filtro_cli_rel}_{filtro_mes}.csv"
+              ),
+              mime="text/csv",
+          )
+        else:
+          st.info("Nenhum pedido encontrado para este cliente no mês selecionado.")
+
+
+# --- 6. MENSAGENS ---
 elif menu.startswith("💬 Mensagens"):
   st.markdown("## 💬 Central de Mensagens & Bate-Papo Interno")
-  st.markdown(
-      "Envie mensagens instantâneas e partilhe ficheiros com outros utilizadores"
-      " do armazém."
-  )
-
   utilizadores_disponiveis = [
       u
       for u in st.session_state.users.keys()
@@ -1255,14 +1534,11 @@ elif menu.startswith("💬 Mensagens"):
   ]
 
   if not utilizadores_disponiveis:
-    st.info(
-        "ℹ️ Não existem outros utilizadores registados no sistema de momento."
-    )
+    st.info("ℹ️ Não existem outros utilizadores registados.")
   else:
     destinatario = st.selectbox(
         "👥 Selecione o Utilizador para Conversar", utilizadores_disponiveis
     )
-
     for m in st.session_state.mensagens:
       if (
           m["para"] == st.session_state.username
@@ -1290,10 +1566,7 @@ elif menu.startswith("💬 Mensagens"):
     chat_container = st.container(height=350)
     with chat_container:
       if not conversa:
-        st.info(
-            f"Sem mensagens ainda com **{destinatario}**. Envie a primeira"
-            " mensagem abaixo!"
-        )
+        st.info(f"Sem mensagens ainda com **{destinatario}**.")
       else:
         for msg in conversa:
           remetente = msg["de"]
@@ -1304,27 +1577,29 @@ elif menu.startswith("💬 Mensagens"):
           if remetente == st.session_state.username:
             st.markdown(
                 f"<div style='text-align: right; background-color: #d1e7dd; padding: 10px; border-radius: 10px; margin: 5px 0; margin-left: 20%;'>"
-                f"<small><b>Você</b> — {data_envio}</small><br>"
-                f"{texto}"
-                f"</div>",
+                f"<small><b>Você</b> — {data_envio}</small><br>{texto}</div>",
                 unsafe_allow_html=True,
             )
             if ficheiro_info:
               st.markdown(
-                  f"<div style='text-align: right;'><a href='data:file/txt;base64,{ficheiro_info['dados']}' download='{ficheiro_info['nome']}'>📎 Ficheiro Anexado: {ficheiro_info['nome']}</a></div>",
+                  f"<div style='text-align: right;'><a"
+                  f" href='data:file/txt;base64,{ficheiro_info['dados']}'"
+                  f" download='{ficheiro_info['nome']}'>📎 Ficheiro Anexado:"
+                  f" {ficheiro_info['nome']}</a></div>",
                   unsafe_allow_html=True,
               )
           else:
             st.markdown(
                 f"<div style='text-align: left; background-color: #f8d7da; padding: 10px; border-radius: 10px; margin: 5px 0; margin-right: 20%;'>"
-                f"<small><b>{remetente}</b> — {data_envio}</small><br>"
-                f"{texto}"
-                f"</div>",
+                f"<small><b>{remetente}</b> — {data_envio}</small><br>{texto}</div>",
                 unsafe_allow_html=True,
             )
             if ficheiro_info:
               st.markdown(
-                  f"<div style='text-align: left;'><a href='data:file/txt;base64,{ficheiro_info['dados']}' download='{ficheiro_info['nome']}'>📎 Ficheiro Anexado: {ficheiro_info['nome']}</a></div>",
+                  f"<div style='text-align: left;'><a"
+                  f" href='data:file/txt;base64,{ficheiro_info['dados']}'"
+                  f" download='{ficheiro_info['nome']}'>📎 Ficheiro Anexado:"
+                  f" {ficheiro_info['nome']}</a></div>",
                   unsafe_allow_html=True,
               )
 
@@ -1334,10 +1609,8 @@ elif menu.startswith("💬 Mensagens"):
           "Escreva a sua mensagem...", placeholder="Digite aqui..."
       )
       anexo_arquivo = st.file_uploader(
-          "📎 Anexar Ficheiro (Opcional)",
-          type=["png", "jpg", "jpeg", "pdf", "csv", "txt"],
+          "📎 Anexar Ficheiro", type=["png", "jpg", "jpeg", "pdf", "csv", "txt"]
       )
-
       btn_enviar = st.form_submit_button("🚀 Enviar Mensagem", type="primary")
 
       if btn_enviar:
@@ -1360,13 +1633,13 @@ elif menu.startswith("💬 Mensagens"):
           }
           st.session_state.mensagens.append(nova_msg)
           salvar_mensagens()
-          st.success("Mensagem enviada com sucesso!")
+          st.success("Mensagem enviada!")
           st.rerun()
         else:
-          st.error("Escreva uma mensagem ou anexe um ficheiro antes de enviar.")
+          st.error("Escreva uma mensagem ou anexe um ficheiro.")
 
 
-# --- 6. RELATÓRIOS ---
+# --- 7. RELATÓRIOS ---
 elif menu == "📊 Romaneios & Relatórios":
   st.markdown("## 📊 Relatórios & Romaneios")
   if st.button("Descarregar CSV do Stock"):
@@ -1376,7 +1649,7 @@ elif menu == "📊 Romaneios & Relatórios":
     )
 
 
-# --- 7. HISTÓRICO ---
+# --- 8. HISTÓRICO ---
 elif menu == "📜 Histórico de Auditoria":
   st.markdown("## 📜 Histórico de Atividades")
   st.dataframe(st.session_state.historico, use_container_width=True)
