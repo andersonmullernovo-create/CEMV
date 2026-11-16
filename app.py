@@ -17,6 +17,7 @@ ARQ_ESTOQUE = "estoque_rbm_dados.csv"
 ARQ_SETORES = "setores_rbm_dados.json"
 ARQ_USERS = "users_rbm_dados.json"
 ARQ_HIST = "historico_rbm_dados.csv"
+ARQ_CONFIG = "config_visual_dados.json"
 
 
 def salvar_estoque():
@@ -35,6 +36,11 @@ def salvar_users():
 
 def salvar_historico():
   st.session_state.historico.to_csv(ARQ_HIST, index=False)
+
+
+def salvar_config():
+  with open(ARQ_CONFIG, "w", encoding="utf-8") as f:
+    json.dump(st.session_state.config_visual, f, ensure_ascii=False)
 
 
 # --- INICIALIZAÇÃO COM CARREGAMENTO PERSISTENTE ---
@@ -67,11 +73,16 @@ if "logged_in" not in st.session_state:
   st.session_state.perfil = ""
 
 if "config_visual" not in st.session_state:
-  st.session_state.config_visual = {
-      "tamanho_fonte": "16px",
-      "cor_fundo_tabela": "#f9f9f9",
-      "cor_texto": "#31333F",
-  }
+  if os.path.exists(ARQ_CONFIG):
+    with open(ARQ_CONFIG, "r", encoding="utf-8") as f:
+      st.session_state.config_visual = json.load(f)
+  else:
+    st.session_state.config_visual = {
+        "tamanho_fonte": "16px",
+        "cor_fundo_tabela": "#f9f9f9",
+        "cor_texto": "#31333F",
+    }
+    salvar_config()
 
 if "historico" not in st.session_state:
   if os.path.exists(ARQ_HIST):
@@ -244,6 +255,7 @@ opcoes_menu = [
     f"💬 Mensagens & Ficheiros ({num_novas})",
     "📊 Romaneios & Relatórios",
     "📜 Histórico de Auditoria",
+    "⚙️ Configuração",
 ]
 
 if st.session_state.perfil == "Administrador":
@@ -447,6 +459,40 @@ if menu == "⚙️ Painel do Administrador & Agenda":
         salvar_estoque()
         st.success("Produto eliminado com sucesso!")
         st.rerun()
+
+
+# --- PÁGINA DE CONFIGURAÇÃO VISUAL ---
+elif menu == "⚙️ Configuração":
+  st.markdown("## ⚙️ Configurações Visuais do Sistema")
+  st.markdown(
+      "Personalize o tamanho das fontes, aspeto e cores do aplicativo para"
+      " melhor visualização no telemóvel ou PC."
+  )
+
+  with st.container(border=True):
+    st.subheader("🎨 Personalização da Interface")
+
+    tamanho_atual = st.selectbox(
+        "Tamanho da Fonte", ["14px", "15px", "16px", "18px", "20px"], index=2
+    )
+    cor_texto_atual = st.text_input(
+        "Cor do Texto (Código Hex ou Nome)",
+        value=st.session_state.config_visual["cor_texto"],
+    )
+    cor_tabela_atual = st.text_input(
+        "Cor de Fundo das Tabelas",
+        value=st.session_state.config_visual["cor_fundo_tabela"],
+    )
+
+    if st.button("💾 Guardar e Aplicar Configurações Visuais", type="primary"):
+      st.session_state.config_visual["tamanho_fonte"] = tamanho_atual
+      st.session_state.config_visual["cor_texto"] = cor_texto_atual
+      st.session_state.config_visual["cor_fundo_tabela"] = cor_tabela_atual
+      salvar_config()
+      st.success(
+          "✨ Configurações visuais atualizadas e guardadas com sucesso!"
+      )
+      st.rerun()
 
 
 # --- 2. CONSULTAR STOCK ---
