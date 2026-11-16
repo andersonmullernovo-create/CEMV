@@ -19,6 +19,21 @@ ARQ_USERS = "users_rbm_dados.json"
 ARQ_HIST = "historico_rbm_dados.csv"
 ARQ_CONFIG = "config_visual_dados.json"
 
+# Dicionário de temas de fundo / papéis de parede disponíveis
+TEMAS_FUNDO = {
+    "Gradiente Azul Moderno": "linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%)",
+    "Industrial RBM / Aço Escovado": (
+        "linear-gradient(135deg, #2c3e50 0%, #34495e 100%)"
+    ),
+    "Modo Escuro Sofisticado": (
+        "linear-gradient(135deg, #1f1c2c 0%, #928dab 100%)"
+    ),
+    "Clássico Alimentício / Creme": (
+        "linear-gradient(135deg, #fdfbf7 0%, #e8e1d5 100%)"
+    ),
+    "Verde Armazém Fresco": "linear-gradient(135deg, #ebf5fb 0%, #d4efdf 100%)",
+}
+
 
 def salvar_estoque():
   st.session_state.estoque.to_csv(ARQ_ESTOQUE, index=False)
@@ -81,6 +96,8 @@ if "config_visual" not in st.session_state:
         "tamanho_fonte": "16px",
         "cor_fundo_tabela": "#f9f9f9",
         "cor_texto": "#31333F",
+        "fundo_app": "Gradiente Azul Moderno",
+        "fundo_login": "Gradiente Azul Moderno",
     }
     salvar_config()
 
@@ -148,8 +165,13 @@ if "scanned_code" in st.query_params:
   st.query_params.clear()
   st.rerun()
 
-# Estilo visual & bloqueio de menu de toque longo do Android
+# Obter estilos visuais atuais
 cfg = st.session_state.config_visual
+bg_css = TEMAS_FUNDO.get(
+    cfg.get("fundo_app", "Gradiente Azul Moderno"), TEMAS_FUNDO["Gradiente Azul Moderno"]
+)
+
+# Estilo visual global & bloqueio de menu de toque longo do Android
 st.markdown(
     f"""
     <style>
@@ -163,15 +185,15 @@ st.markdown(
         user-select: text !important;
     }}
     html, body, [class*="css"] {{
-        font-size: {cfg['tamanho_fonte']} !important;
-        color: {cfg['cor_texto']} !important;
+        font-size: {cfg.get('tamanho_fonte', '16px')} !important;
+        color: {cfg.get('cor_texto', '#31333F')} !important;
     }}
     .stApp {{
-        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        background: {bg_css};
         background-attachment: fixed;
     }}
     .stDataFrame {{
-        background-color: {cfg['cor_fundo_tabela']} !important;
+        background-color: {cfg.get('cor_fundo_tabela', '#f9f9f9')} !important;
     }}
     div[data-testid="stVerticalBlock"] > div[style*="border-color"] {{
         background-color: rgba(255, 255, 255, 0.95);
@@ -185,8 +207,26 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- SISTEMA DE LOGIN (ESTILIZADO COM A MESMA ARTE) ---
+# --- SISTEMA DE LOGIN (ESTILIZADO COM TEMA CONFIGURÁVEL) ---
 if not st.session_state.logged_in:
+  bg_login_css = TEMAS_FUNDO.get(
+      cfg.get("fundo_login", "Gradiente Azul Moderno"),
+      TEMAS_FUNDO["Gradiente Azul Moderno"],
+  )
+
+  # Aplicar fundo específico da tela de login se necessário
+  st.markdown(
+      f"""
+        <style>
+        .stApp {{
+            background: {bg_login_css} !important;
+            background-attachment: fixed !important;
+        }}
+        </style>
+        """,
+      unsafe_allow_html=True,
+  )
+
   col_l1, col_l2, col_l3 = st.columns([1, 1.4, 1])
   with col_l2:
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -461,38 +501,106 @@ if menu == "⚙️ Painel do Administrador & Agenda":
         st.rerun()
 
 
-# --- PÁGINA DE CONFIGURAÇÃO VISUAL ---
+# --- PÁGINA DE CONFIGURAÇÃO VISUAL & PRÉ-VISUALIZAÇÃO ---
 elif menu == "⚙️ Configuração":
-  st.markdown("## ⚙️ Configurações Visuais do Sistema")
+  st.markdown("## ⚙️ Configurações Visuais & Temas do Sistema")
   st.markdown(
-      "Personalize o tamanho das fontes, aspeto e cores do aplicativo para"
-      " melhor visualização no telemóvel ou PC."
+      "Personalize os papéis de parede, cores e tamanhos do aplicativo e da"
+      " tela de login com **pré-visualização ao vivo** antes de aplicar."
   )
 
-  with st.container(border=True):
-    st.subheader("🎨 Personalização da Interface")
+  col_cfg1, col_cfg2 = st.columns([1, 1])
 
-    tamanho_atual = st.selectbox(
-        "Tamanho da Fonte", ["14px", "15px", "16px", "18px", "20px"], index=2
-    )
-    cor_texto_atual = st.text_input(
-        "Cor do Texto (Código Hex ou Nome)",
-        value=st.session_state.config_visual["cor_texto"],
-    )
-    cor_tabela_atual = st.text_input(
-        "Cor de Fundo das Tabelas",
-        value=st.session_state.config_visual["cor_fundo_tabela"],
-    )
+  with col_cfg1:
+    with st.container(border=True):
+      st.subheader("🎨 Parâmetros de Estilo")
 
-    if st.button("💾 Guardar e Aplicar Configurações Visuais", type="primary"):
-      st.session_state.config_visual["tamanho_fonte"] = tamanho_atual
-      st.session_state.config_visual["cor_texto"] = cor_texto_atual
-      st.session_state.config_visual["cor_fundo_tabela"] = cor_tabela_atual
-      salvar_config()
-      st.success(
-          "✨ Configurações visuais atualizadas e guardadas com sucesso!"
+      lista_temas = list(TEMAS_FUNDO.keys())
+
+      idx_app = (
+          lista_temas.index(cfg.get("fundo_app", "Gradiente Azul Moderno"))
+          if cfg.get("fundo_app", "Gradiente Azul Moderno") in lista_temas
+          else 0
       )
-      st.rerun()
+      idx_login = (
+          lista_temas.index(cfg.get("fundo_login", "Gradiente Azul Moderno"))
+          if cfg.get("fundo_login", "Gradiente Azul Moderno") in lista_temas
+          else 0
+      )
+
+      # Inputs de configuração (interativos para preview em tempo real)
+      prev_fundo_app = st.selectbox(
+          "🖼️ Papel de Parede / Tema do Aplicativo Principal",
+          lista_temas,
+          index=idx_app,
+      )
+      prev_fundo_login = st.selectbox(
+          "🔐 Papel de Parede / Tema da Página de Login",
+          lista_temas,
+          index=idx_login,
+      )
+
+      tamanhos_disponiveis = ["14px", "15px", "16px", "18px", "20px"]
+      idx_tam = (
+          tamanhos_disponiveis.index(cfg.get("tamanho_fonte", "16px"))
+          if cfg.get("tamanho_fonte", "16px") in tamanhos_disponiveis
+          else 2
+      )
+      prev_tamanho = st.selectbox(
+          "📏 Tamanho da Fonte Global", tamanhos_disponiveis, index=idx_tam
+      )
+
+      prev_cor_texto = st.text_input(
+          "✍️ Cor do Texto (Hex ou Nome)",
+          value=cfg.get("cor_texto", "#31333F"),
+      )
+      prev_cor_tabela = st.text_input(
+          "📊 Cor de Fundo das Tabelas",
+          value=cfg.get("cor_fundo_tabela", "#f9f9f9"),
+      )
+
+      st.markdown("<br>", unsafe_allow_html=True)
+      if st.button(
+          "💾 Aplicar e Guardar Configurações Definitivas", type="primary"
+      ):
+        st.session_state.config_visual["fundo_app"] = prev_fundo_app
+        st.session_state.config_visual["fundo_login"] = prev_fundo_login
+        st.session_state.config_visual["tamanho_fonte"] = prev_tamanho
+        st.session_state.config_visual["cor_texto"] = prev_cor_texto
+        st.session_state.config_visual["cor_fundo_tabela"] = prev_cor_tabela
+        salvar_config()
+        st.success("✨ Configurações aplicadas e guardadas com sucesso!")
+        st.rerun()
+
+  with col_cfg2:
+    st.subheader("👁️ Pré-visualização ao Vivo")
+    st.markdown(
+        "Veja abaixo como o painel e os elementos ficarão com as opções"
+        " selecionadas:"
+    )
+
+    bg_preview_css = TEMAS_FUNDO.get(
+        prev_fundo_app, TEMAS_FUNDO["Gradiente Azul Moderno"]
+    )
+
+    # Caixa simulando a pré-visualização em tempo real
+    preview_html = f"""
+        <div style="background: {bg_preview_css}; padding: 25px; border-radius: 14px; border: 2px dashed #007bff; color: {prev_cor_texto}; font-size: {prev_tamanho}; font-family: sans-serif;">
+            <h3 style="margin-top:0; color: {prev_cor_texto};">🔍 Exemplo de Cartão RBM</h3>
+            <p>Este é o aspeto do texto principal com a fonte <b>{prev_tamanho}</b>.</p>
+            <div style="background-color: {prev_cor_tabela}; padding: 12px; border-radius: 8px; border: 1px solid #ccc; margin-top: 10px;">
+                <b>📊 Pré-visualização de Tabela / Bloco:</b><br>
+                Produto Exemplo: Calzone Chocolate (12 un)<br>
+                Stock: 40 unidades (Setor: Secos e Molhados)
+            </div>
+            <button style="margin-top: 15px; background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: bold; cursor: pointer;">Botão de Exemplo</button>
+        </div>
+        """
+    st.markdown(preview_html, unsafe_allow_html=True)
+    st.caption(
+        "💡 Nota: O tema de login selecionado será aplicado assim que terminar"
+        " sessão."
+    )
 
 
 # --- 2. CONSULTAR STOCK ---
