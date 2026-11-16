@@ -1,33 +1,65 @@
 import datetime
+import json
+import os
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
 # Configuração da página orientada ao setor alimentício
 st.set_page_config(
-    page_title="Gestão de Stock - Alimentício Avançado",
+    page_title="Gestão de Stock - RBM Alimentos",
     page_icon="🍲",
     layout="wide",
 )
 
-# --- INICIALIZAÇÃO DO ESTADO DA SESSÃO ---
+# --- FICHEIROS DE PERSISTÊNCIA LOCAL ---
+ARQ_ESTOQUE = "estoque_rbm_dados.csv"
+ARQ_SETORES = "setores_rbm_dados.json"
+ARQ_USERS = "users_rbm_dados.json"
+ARQ_HIST = "historico_rbm_dados.csv"
+
+
+def salvar_estoque():
+  st.session_state.estoque.to_csv(ARQ_ESTOQUE, index=False)
+
+
+def salvar_setores():
+  with open(ARQ_SETORES, "w", encoding="utf-8") as f:
+    json.dump(st.session_state.setores, f, ensure_ascii=False)
+
+
+def salvar_users():
+  with open(ARQ_USERS, "w", encoding="utf-8") as f:
+    json.dump(st.session_state.users, f, ensure_ascii=False)
+
+
+def salvar_historico():
+  st.session_state.historico.to_csv(ARQ_HIST, index=False)
+
+
+# --- INICIALIZAÇÃO COM CARREGAMENTO PERSISTENTE ---
 if "users" not in st.session_state:
-  st.session_state.users = {
-      "admin": {
-          "senha": "1234",
-          "perfil": "Administrador",
-          "pode_cadastrar": True,
-          "pode_excluir": True,
-          "pode_movimentar": True,
-      },
-      "operador": {
-          "senha": "abcd",
-          "perfil": "Operador",
-          "pode_cadastrar": False,
-          "pode_excluir": False,
-          "pode_movimentar": True,
-      },
-  }
+  if os.path.exists(ARQ_USERS):
+    with open(ARQ_USERS, "r", encoding="utf-8") as f:
+      st.session_state.users = json.load(f)
+  else:
+    st.session_state.users = {
+        "admin": {
+            "senha": "1234",
+            "perfil": "Administrador",
+            "pode_cadastrar": True,
+            "pode_excluir": True,
+            "pode_movimentar": True,
+        },
+        "operador": {
+            "senha": "abcd",
+            "perfil": "Operador",
+            "pode_cadastrar": False,
+            "pode_excluir": False,
+            "pode_movimentar": True,
+        },
+    }
+    salvar_users()
 
 if "logged_in" not in st.session_state:
   st.session_state.logged_in = False
@@ -42,9 +74,13 @@ if "config_visual" not in st.session_state:
   }
 
 if "historico" not in st.session_state:
-  st.session_state.historico = pd.DataFrame(
-      columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"]
-  )
+  if os.path.exists(ARQ_HIST):
+    st.session_state.historico = pd.read_csv(ARQ_HIST)
+  else:
+    st.session_state.historico = pd.DataFrame(
+        columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"]
+    )
+    salvar_historico()
 
 if "mensagens" not in st.session_state:
   st.session_state.mensagens = []
@@ -53,38 +89,47 @@ if "agenda_eventos" not in st.session_state:
   st.session_state.agenda_eventos = []
 
 if "setores" not in st.session_state:
-  st.session_state.setores = [
-      "Armazém Central",
-      "Câmara Fria",
-      "Secos e Molhados",
-  ]
+  if os.path.exists(ARQ_SETORES):
+    with open(ARQ_SETORES, "r", encoding="utf-8") as f:
+      st.session_state.setores = json.load(f)
+  else:
+    st.session_state.setores = [
+        "Armazém Central",
+        "Câmara Fria",
+        "Secos e Molhados",
+    ]
+    salvar_setores()
 
 if "pedidos_ativos" not in st.session_state:
   st.session_state.pedidos_ativos = {}
 
 if "estoque" not in st.session_state:
-  st.session_state.estoque = pd.DataFrame({
-      "Codigo_Barras": ["789101", "789102", "789103"],
-      "Produto": [
-          "Calzone Chocolate (12 un)",
-          "Farinha de Trigo (Kg)",
-          "Óleo de Soja (L)",
-      ],
-      "Descricao": [
-          "Calzone doce de chocolate",
-          "Farinha tipo 1 refinada",
-          "Óleo vegetal de soja",
-      ],
-      "Unidades_Embalagem": [12, 10, 20],
-      "Tipo_Item": ["Produto Acabado", "Matéria-Prima", "Insumo"],
-      "Setor": ["Secos e Molhados", "Secos e Molhados", "Câmara Fria"],
-      "Quantidade": [40, 30, 20],
-      "Limite_Minimo": [10, 25, 5],
-      "Fabricacao": ["2026-10-01", "2026-09-15", "2026-10-10"],
-      "Validade": ["2026-11-15", "2027-05-20", "2026-11-10"],
-      "Ultima_Modificacao": ["2026-11-01", "2026-11-05", "2026-11-10"],
-      "Modificado_Por": ["admin", "operador", "admin"],
-  })
+  if os.path.exists(ARQ_ESTOQUE):
+    st.session_state.estoque = pd.read_csv(ARQ_ESTOQUE)
+  else:
+    st.session_state.estoque = pd.DataFrame({
+        "Codigo_Barras": ["789101", "789102", "789103"],
+        "Produto": [
+            "Calzone Chocolate (12 un)",
+            "Farinha de Trigo (Kg)",
+            "Óleo de Soja (L)",
+        ],
+        "Descricao": [
+            "Calzone doce de chocolate",
+            "Farinha tipo 1 refinada",
+            "Óleo vegetal de soja",
+        ],
+        "Unidades_Embalagem": [12, 10, 20],
+        "Tipo_Item": ["Produto Acabado", "Matéria-Prima", "Insumo"],
+        "Setor": ["Secos e Molhados", "Secos e Molhados", "Câmara Fria"],
+        "Quantidade": [40, 30, 20],
+        "Limite_Minimo": [10, 25, 5],
+        "Fabricacao": ["2026-10-01", "2026-09-15", "2026-10-10"],
+        "Validade": ["2026-11-15", "2027-05-20", "2026-11-10"],
+        "Ultima_Modificacao": ["2026-11-01", "2026-11-05", "2026-11-10"],
+        "Modificado_Por": ["admin", "operador", "admin"],
+    })
+    salvar_estoque()
 
 # Capturar código vindo do leitor ótico da câmara em tempo real
 if "scanned_code" in st.query_params:
@@ -92,18 +137,16 @@ if "scanned_code" in st.query_params:
   st.query_params.clear()
   st.rerun()
 
-# Aplicar estilo visual dinâmico & bloqueio total de menu de toque longo do Android
+# Estilo visual & bloqueio de menu de toque longo do Android
 cfg = st.session_state.config_visual
 st.markdown(
     f"""
     <style>
-    /* Desativa completamente o menu de toque longo / popup do Android */
     * {{
         -webkit-touch-callout: none !important;
         -webkit-user-select: none !important;
         user-select: none !important;
     }}
-    /* Permite seleção e escrita normal apenas em caixas de texto */
     input, textarea, select {{
         -webkit-user-select: text !important;
         user-select: text !important;
@@ -131,25 +174,44 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --- SISTEMA DE LOGIN ---
+# --- SISTEMA DE LOGIN (ESTILIZADO COM A MESMA ARTE) ---
 if not st.session_state.logged_in:
-  st.title("🍲 RBM Indústria de Alimentos - Controlo de Estoque & Expedição")
-  st.markdown("Insira as suas credenciais para aceder ao armazém.")
-  user_input = st.text_input("Utilizador")
-  pass_input = st.text_input("Senha", type="password")
+  col_l1, col_l2, col_l3 = st.columns([1, 1.4, 1])
+  with col_l2:
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    with st.container(border=True):
+      st.markdown(
+          "<h2 style='text-align: center; color: #2c3e50; margin-bottom: 0px;'>🍲"
+          " RBM Alimentos</h2>",
+          unsafe_allow_html=True,
+      )
+      st.markdown(
+          "<p style='text-align: center; color: #666; font-size: 14px;'>Controlo"
+          " de Estoque & Expedição</p>",
+          unsafe_allow_html=True,
+      )
+      st.markdown("---")
 
-  if st.button("Entrar no Sistema"):
-    if (
-        user_input in st.session_state.users
-        and st.session_state.users[user_input]["senha"] == pass_input
-    ):
-      st.session_state.logged_in = True
-      st.session_state.username = user_input
-      st.session_state.perfil = st.session_state.users[user_input]["perfil"]
-      st.success("Login efetuado com sucesso!")
-      st.rerun()
-    else:
-      st.error("Utilizador ou senha incorretos.")
+      user_input = st.text_input("👤 Utilizador", key="login_user")
+      pass_input = st.text_input(
+          "🔑 Senha de Acesso", type="password", key="login_pass"
+      )
+
+      st.markdown("<br>", unsafe_allow_html=True)
+      if st.button(
+          "🚀 Entrar no Sistema", type="primary", use_container_width=True
+      ):
+        if (
+            user_input in st.session_state.users
+            and st.session_state.users[user_input]["senha"] == pass_input
+        ):
+          st.session_state.logged_in = True
+          st.session_state.username = user_input
+          st.session_state.perfil = st.session_state.users[user_input]["perfil"]
+          st.success("Login efetuado com sucesso!")
+          st.rerun()
+        else:
+          st.error("Utilizador ou senha incorretos.")
   st.stop()
 
 permissoes_atuais = st.session_state.users.get(
@@ -241,7 +303,8 @@ if menu == "⚙️ Painel do Administrador & Agenda":
               "pode_excluir": pode_exc,
               "pode_movimentar": pode_mov,
           }
-          st.success(f"Utilizador '{novo_user}' guardado!")
+          salvar_users()
+          st.success(f"Utilizador '{novo_user}' guardado com sucesso!")
         else:
           st.error("Preencha o nome e a senha.")
 
@@ -256,6 +319,7 @@ if menu == "⚙️ Painel do Administrador & Agenda":
           if u != "admin":
             if st.button(f"Excluir #{u}", key=f"del_u_{u}"):
               del st.session_state.users[u]
+              salvar_users()
               st.rerun()
 
   with tab_adm2:
@@ -266,10 +330,11 @@ if menu == "⚙️ Painel do Administrador & Agenda":
         if novo_setor and novo_setor.strip():
           if novo_setor.strip() not in st.session_state.setores:
             st.session_state.setores.append(novo_setor.strip())
-            st.success("Setor criado!")
+            salvar_setores()
+            st.success("Setor criado e guardado com sucesso!")
             st.rerun()
           else:
-            st.error("Já existe.")
+            st.error("Este setor já existe.")
         else:
           st.error("Nome inválido.")
     st.markdown("<br>", unsafe_allow_html=True)
@@ -282,6 +347,7 @@ if menu == "⚙️ Painel do Administrador & Agenda":
           if len(st.session_state.setores) > 1:
             if st.button("Excluir", key=f"del_s_{s}"):
               st.session_state.setores.remove(s)
+              salvar_setores()
               st.rerun()
 
   with tab_adm3:
@@ -339,7 +405,8 @@ if menu == "⚙️ Painel do Administrador & Agenda":
           df.loc[idx_ed, "Unidades_Embalagem"] = ne
           df.loc[idx_ed, "Limite_Minimo"] = nm
           df.loc[idx_ed, "Setor"] = ns
-          st.success("Atualizado com sucesso!")
+          salvar_estoque()
+          st.success("Atualizado e guardado com sucesso!")
           st.rerun()
 
   with tab_adm5:
@@ -361,6 +428,7 @@ if menu == "⚙️ Painel do Administrador & Agenda":
           try:
             df_restaurado = pd.read_csv(uploaded_backup)
             st.session_state.estoque = df_restaurado
+            salvar_estoque()
             st.success("Stock restaurado com sucesso!")
             st.rerun()
           except Exception as e:
@@ -376,7 +444,8 @@ if menu == "⚙️ Painel do Administrador & Agenda":
         st.session_state.estoque = df[
             df["Produto"] != prod_ex
         ].reset_index(drop=True)
-        st.success("Produto eliminado!")
+        salvar_estoque()
+        st.success("Produto eliminado com sucesso!")
         st.rerun()
 
 
@@ -420,6 +489,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
   if not permissoes_atuais["pode_movimentar"]:
     st.error("Sem permissão para movimentar stock.")
   else:
+    # BLOCO EXCLUSIVO DO ADMINISTRADOR PARA CADASTRAR NOVO PRODUTO
     if st.session_state.perfil == "Administrador":
       with st.container(border=True):
         cadastrar_novo_manual = st.checkbox(
@@ -476,16 +546,18 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
               st.session_state.estoque = pd.concat(
                   [st.session_state.estoque, nova_l], ignore_index=True
               )
+              salvar_estoque()
               st.success(
-                  f"Produto adicionado ao setor '{m_setor}' com sucesso!"
+                  f"Produto adicionado ao setor '{m_setor}' e guardado com"
+                  " sucesso!"
               )
               st.rerun()
             else:
               st.error("Preencha o nome e o código de barras.")
     else:
       st.info(
-          "ℹ️ Apenas administradores podem cadastrar novos produtos no"
-          " catálogo geral."
+          "ℹ️ *Nota:* O registo de novos produtos no catálogo geral é restrito"
+          " ao perfil de Administrador."
       )
 
     st.markdown("<br>", unsafe_allow_html=True)
@@ -513,7 +585,6 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
             " a etiqueta, o código será lido instantaneamente:"
         )
 
-        # HTML Component com Leitor de Código em Tempo Real via html5-qrcode
         scanner_html = """
             <div style="text-align: center; background: #f8f9fa; padding: 15px; border-radius: 12px; border: 1px solid #ddd;">
                 <div id="reader" style="width:100%; max-width:320px; margin:auto; border-radius: 8px; overflow: hidden;"></div>
@@ -560,12 +631,8 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
             """
         components.html(scanner_html, height=420)
 
-        # Verificar se veio código lido pela câmara
         cod_lido = st.session_state.get("codigo_lido_ativo", "")
         if cod_lido:
-          st.success(
-              f"✔️ Código detetado pela câmara: **{cod_lido}**"
-          )
           match = df[df["Codigo_Barras"] == cod_lido.strip()]
           if not match.empty:
             produto_selecionado = match.iloc[0]["Produto"]
@@ -649,6 +716,10 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           st.session_state.historico = pd.concat(
               [st.session_state.historico, nova_hist], ignore_index=True
           )
+
+          salvar_estoque()
+          salvar_historico()
+
           st.success(
               f"Operação de {acao} registada com sucesso no setor **{setor_reg}**!"
           )
@@ -699,7 +770,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       st.markdown("---")
       st.info(
           "⚡ **Atalho de Importação:** Clique no botão abaixo para carregar"
-          " automaticamente todos os 22 itens do talão da Neriah[span_1](start_span)[span_1](end_span)."
+          f" automaticamente todos os 22 itens do talão da Neriah[span_0](start_span)[span_0](end_span)."
       )
       if st.button(
           "⚡ [Importação Automática] Carregar Itens do Talão da Neriah",
@@ -858,6 +929,8 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                 [st.session_state.historico, nova_hist], ignore_index=True
             )
 
+          salvar_estoque()
+          salvar_historico()
           dados_pedido["concluido"] = True
           return True
         return False
