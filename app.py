@@ -206,7 +206,6 @@ if "estoque" not in st.session_state:
     })
     salvar_estoque()
 
-# Garantir colunas de lote se o CSV antigo não as tiver
 if "Lote" not in st.session_state.estoque.columns:
   st.session_state.estoque["Lote"] = "LOT-GERAL"
 
@@ -324,6 +323,11 @@ permissoes_atuais = st.session_state.users.get(
 # --- BARRA LATERAL ---
 st.sidebar.title(f"👤 {st.session_state.username}")
 st.sidebar.caption(f"Perfil: **{st.session_state.perfil}**")
+
+# Recarregar mensagens não lidas em tempo real
+if os.path.exists(ARQ_MENSAGENS):
+  with open(ARQ_MENSAGENS, "r", encoding="utf-8") as f:
+    st.session_state.mensagens = json.load(f)
 
 msgs_nao_lidas = [
     m
@@ -643,11 +647,10 @@ elif menu == "⚙️ Configuração":
     st.markdown(preview_html, unsafe_allow_html=True)
 
 
-# --- 2. CONSULTAR STOCK & KPIs (PROPOSTA 2) ---
+# --- 2. CONSULTAR STOCK & KPIs ---
 elif menu == "🍲 Consultar Stock & Setores":
   st.markdown("## 🍲 Consulta de Stock, Lotes & Indicadores (KPIs)")
 
-  # PROPOSTA 2: Dashboard de KPIs em Tempo Real
   hoje_str = datetime.date.today().strftime("%Y-%m-%d")
   total_skus = len(df)
   total_qtd = int(df["Quantidade"].sum()) if not df.empty else 0
@@ -694,7 +697,7 @@ elif menu == "🍲 Consultar Stock & Setores":
   )
 
 
-# --- 3. ENTRADAS E SAÍDAS (COM RASTREABILIDADE DE LOTES - PROPOSTA 3) ---
+# --- 3. ENTRADAS E SAÍDAS ---
 elif menu == "➕ Entradas / Saídas (Expedição)":
   st.markdown(
       "## ➕ Entradas, Saídas, Leitura por Câmara & Controlo FIFO (Lotes)"
@@ -776,7 +779,6 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
     with st.container(border=True):
       st.subheader("📦 Movimentar Stock (Entrada / Saída com Regra FIFO)")
 
-      # PROPOSTA 3: Sugestão baseada em FIFO (lote mais antigo a vencer primeiro)
       if not df.empty:
         df_fifo = df.sort_values(by="Validade", ascending=True)
         produto_sugestao = df_fifo.iloc[0]["Produto"]
@@ -893,9 +895,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
               "Quantidade a Movimentar", min_value=1, value=1, key="qtd_mov_val"
           )
         with col_q2:
-          novo_lote_mov = st.text_input(
-              "Nº do Lote do Lote", value="LOT-2026-X"
-          )
+          novo_lote_mov = st.text_input("Nº do Lote", value="LOT-2026-X")
         with col_q3:
           data_fab_mov = st.date_input(
               "Fabricação", datetime.date.today(), key="fab_mov_dt"
@@ -951,7 +951,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
             del st.session_state["codigo_lido_ativo"]
 
 
-# --- 3.1 GERAR ETIQUETAS DE CÓDIGOS DE BARRAS (PROPOSTA 1) ---
+# --- 3.1 GERAR ETIQUETAS DE CÓDIGOS DE BARRAS ---
 elif menu == "🏷️ Gerar Etiquetas (Lotes)":
   st.markdown("## 🏷️ Módulo de Geração e Impressão de Etiquetas de Lotes")
   st.markdown(
@@ -1036,7 +1036,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       st.markdown("---")
       st.info(
           "⚡ **Atalho de Importação:** Clique no botão abaixo para carregar"
-          " automaticamente todos os 22 itens do talão da Neriah."
+          " automaticamente todos os 22 itens do talão da Neriah[span_0](start_span)[span_0](end_span)."
       )
       if st.button(
           "⚡ [Importação Automática] Carregar Itens do Talão da Neriah",
@@ -1461,7 +1461,10 @@ elif menu == "👥 Gestão de Clientes & Pedidos":
               f" {cp['data']} | Status: *{cp['status']}*"
           )
           for i in cp["itens"]:
-            st.caption(f"&nbsp;&nbsp;&nbsp;&nbsp;• {i['produto']}: {i['quantidade']} un")
+            st.caption(
+                f"&nbsp;&nbsp;&nbsp;&nbsp;• {i['produto']}: {i['quantidade']}"
+                " un"
+            )
 
   with tab_cli3:
     with st.container(border=True):
@@ -1524,9 +1527,15 @@ elif menu == "👥 Gestão de Clientes & Pedidos":
           st.info("Nenhum pedido encontrado para este cliente no mês selecionado.")
 
 
-# --- 6. MENSAGENS ---
+# --- 6. MENSAGENS (COM SINCRONIZAÇÃO EM TEMPO REAL) ---
 elif menu.startswith("💬 Mensagens"):
   st.markdown("## 💬 Central de Mensagens & Bate-Papo Interno")
+
+  # Recarregamento em tempo real do ficheiro para ver mensagens de outros utilizadores
+  if os.path.exists(ARQ_MENSAGENS):
+    with open(ARQ_MENSAGENS, "r", encoding="utf-8") as f:
+      st.session_state.mensagens = json.load(f)
+
   utilizadores_disponiveis = [
       u
       for u in st.session_state.users.keys()
@@ -1539,6 +1548,7 @@ elif menu.startswith("💬 Mensagens"):
     destinatario = st.selectbox(
         "👥 Selecione o Utilizador para Conversar", utilizadores_disponiveis
     )
+
     for m in st.session_state.mensagens:
       if (
           m["para"] == st.session_state.username
@@ -1622,6 +1632,11 @@ elif menu.startswith("💬 Mensagens"):
             bytes_arq = anexo_arquivo.read()
             b64_arq = base64.b64encode(bytes_arq).decode("utf-8")
             d_arquivo = {"nome": anexo_arquivo.name, "dados": b64_arq}
+
+          # Recarregar antes de adicionar para evitar sobrescrever mensagens de outros
+          if os.path.exists(ARQ_MENSAGENS):
+            with open(ARQ_MENSAGENS, "r", encoding="utf-8") as f:
+              st.session_state.mensagens = json.load(f)
 
           nova_msg = {
               "de": st.session_state.username,
