@@ -1527,14 +1527,16 @@ elif menu == "👥 Gestão de Clientes & Pedidos":
           st.info("Nenhum pedido encontrado para este cliente no mês selecionado.")
 
 
-# --- 6. MENSAGENS (COM SINCRONIZAÇÃO EM TEMPO REAL) ---
+# --- 6. MENSAGENS (TEMPO REAL) ---
 elif menu.startswith("💬 Mensagens"):
   st.markdown("## 💬 Central de Mensagens & Bate-Papo Interno")
 
-  # Recarregamento em tempo real do ficheiro para ver mensagens de outros utilizadores
-  if os.path.exists(ARQ_MENSAGENS):
-    with open(ARQ_MENSAGENS, "r", encoding="utf-8") as f:
-      st.session_state.mensagens = json.load(f)
+  def carregar_mensagens_disco():
+    if os.path.exists(ARQ_MENSAGENS):
+      with open(ARQ_MENSAGENS, "r", encoding="utf-8") as f:
+        st.session_state.mensagens = json.load(f)
+
+  carregar_mensagens_disco()
 
   utilizadores_disponiveis = [
       u
@@ -1549,69 +1551,83 @@ elif menu.startswith("💬 Mensagens"):
         "👥 Selecione o Utilizador para Conversar", utilizadores_disponiveis
     )
 
-    for m in st.session_state.mensagens:
-      if (
-          m["para"] == st.session_state.username
-          and m["de"] == destinatario
-          and not m.get("lida", False)
-      ):
-        m["lida"] = True
-    salvar_mensagens()
-
     st.markdown("---")
     st.markdown(f"### 💬 Conversa com: **{destinatario}**")
 
-    conversa = [
-        m
-        for m in st.session_state.mensagens
+    def renderizar_conversa(user_atual, outro_user):
+      carregar_mensagens_disco()
+
+      alterado = False
+      for m in st.session_state.mensagens:
         if (
-            (
-                m["de"] == st.session_state.username
-                and m["para"] == destinatario
-            )
-            or (m["de"] == destinatario and m["para"] == st.session_state.username)
-        )
-    ]
+            m["para"] == user_atual
+            and m["de"] == outro_user
+            and not m.get("lida", False)
+        ):
+          m["lida"] = True
+          alterado = True
+      if alterado:
+        salvar_mensagens()
 
-    chat_container = st.container(height=350)
-    with chat_container:
-      if not conversa:
-        st.info(f"Sem mensagens ainda com **{destinatario}**.")
-      else:
-        for msg in conversa:
-          remetente = msg["de"]
-          texto = msg["texto"]
-          data_envio = msg["data"]
-          ficheiro_info = msg.get("ficheiro", None)
+      conversa = [
+          m
+          for m in st.session_state.mensagens
+          if (
+              (m["de"] == user_atual and m["para"] == outro_user)
+              or (m["de"] == outro_user and m["para"] == user_atual)
+          )
+      ]
 
-          if remetente == st.session_state.username:
-            st.markdown(
-                f"<div style='text-align: right; background-color: #d1e7dd; padding: 10px; border-radius: 10px; margin: 5px 0; margin-left: 20%;'>"
-                f"<small><b>Você</b> — {data_envio}</small><br>{texto}</div>",
-                unsafe_allow_html=True,
-            )
-            if ficheiro_info:
+      chat_container = st.container(height=350)
+      with chat_container:
+        if not conversa:
+          st.info(f"Sem mensagens ainda com **{outro_user}**.")
+        else:
+          for msg in conversa:
+            remetente = msg["de"]
+            texto = msg["texto"]
+            data_envio = msg["data"]
+            ficheiro_info = msg.get("ficheiro", None)
+
+            if remetente == user_atual:
               st.markdown(
-                  f"<div style='text-align: right;'><a"
-                  f" href='data:file/txt;base64,{ficheiro_info['dados']}'"
-                  f" download='{ficheiro_info['nome']}'>📎 Ficheiro Anexado:"
-                  f" {ficheiro_info['nome']}</a></div>",
+                  f"<div style='text-align: right; background-color: #d1e7dd; padding: 10px; border-radius: 10px; margin: 5px 0; margin-left: 20%;'>"
+                  f"<small><b>Você</b> — {data_envio}</small><br>{texto}</div>",
                   unsafe_allow_html=True,
               )
-          else:
-            st.markdown(
-                f"<div style='text-align: left; background-color: #f8d7da; padding: 10px; border-radius: 10px; margin: 5px 0; margin-right: 20%;'>"
-                f"<small><b>{remetente}</b> — {data_envio}</small><br>{texto}</div>",
-                unsafe_allow_html=True,
-            )
-            if ficheiro_info:
+              if ficheiro_info:
+                st.markdown(
+                    f"<div style='text-align: right;'><a"
+                    f" href='data:file/txt;base64,{ficheiro_info['dados']}'"
+                    f" download='{ficheiro_info['nome']}'>📎 Ficheiro"
+                    f" Anexado: {ficheiro_info['nome']}</a></div>",
+                    unsafe_allow_html=True,
+                )
+            else:
               st.markdown(
-                  f"<div style='text-align: left;'><a"
-                  f" href='data:file/txt;base64,{ficheiro_info['dados']}'"
-                  f" download='{ficheiro_info['nome']}'>📎 Ficheiro Anexado:"
-                  f" {ficheiro_info['nome']}</a></div>",
+                  f"<div style='text-align: left; background-color: #f8d7da; padding: 10px; border-radius: 10px; margin: 5px 0; margin-right: 20%;'>"
+                  f"<small><b>{remetente}</b> — {data_envio}</small><br>{texto}</div>",
                   unsafe_allow_html=True,
               )
+              if ficheiro_info:
+                st.markdown(
+                    f"<div style='text-align: left;'><a"
+                    f" href='data:file/txt;base64,{ficheiro_info['dados']}'"
+                    f" download='{ficheiro_info['nome']}'>📎 Ficheiro"
+                    f" Anexado: {ficheiro_info['nome']}</a></div>",
+                    unsafe_allow_html=True,
+                )
+
+    if hasattr(st, "fragment"):
+      @st.fragment(run_every="3s")
+      def chat_ao_vivo():
+        renderizar_conversa(st.session_state.username, destinatario)
+
+      chat_ao_vivo()
+    else:
+      renderizar_conversa(st.session_state.username, destinatario)
+      if st.button("🔄 Atualizar Mensagens Agora"):
+        st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
     with st.form(key="form_envio_msg", clear_on_submit=True):
@@ -1633,10 +1649,7 @@ elif menu.startswith("💬 Mensagens"):
             b64_arq = base64.b64encode(bytes_arq).decode("utf-8")
             d_arquivo = {"nome": anexo_arquivo.name, "dados": b64_arq}
 
-          # Recarregar antes de adicionar para evitar sobrescrever mensagens de outros
-          if os.path.exists(ARQ_MENSAGENS):
-            with open(ARQ_MENSAGENS, "r", encoding="utf-8") as f:
-              st.session_state.mensagens = json.load(f)
+          carregar_mensagens_disco()
 
           nova_msg = {
               "de": st.session_state.username,
@@ -1652,8 +1665,6 @@ elif menu.startswith("💬 Mensagens"):
           st.rerun()
         else:
           st.error("Escreva uma mensagem ou anexe um ficheiro.")
-
-
 # --- 7. RELATÓRIOS ---
 elif menu == "📊 Romaneios & Relatórios":
   st.markdown("## 📊 Relatórios & Romaneios")
