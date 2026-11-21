@@ -7,7 +7,7 @@ import streamlit.components.v1 as components
 
 # Configuração da página orientada ao setor alimentício
 st.set_page_config(
-    page_title="Gestão de Stock - RBM Alimentos",
+    page_title="Controle de Estoque",
     page_icon="🍲",
     layout="wide",
 )
