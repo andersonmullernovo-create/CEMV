@@ -1665,14 +1665,176 @@ elif menu.startswith("💬 Mensagens"):
           st.rerun()
         else:
           st.error("Escreva uma mensagem ou anexe um ficheiro.")
-# --- 7. RELATÓRIOS ---
+# --- 7. RELATÓRIOS & ROMANEIOS ---
 elif menu == "📊 Romaneios & Relatórios":
-  st.markdown("## 📊 Relatórios & Romaneios")
-  if st.button("Descarregar CSV do Stock"):
-    csv = df.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        "Baixar Ficheiro", csv, "estoque_rbm.csv", "text/csv"
+  st.markdown("## 📊 Romaneios & Relatórios por Período")
+  st.markdown(
+      "Selecione o tipo de relatório e o intervalo de datas desejado para gerar"
+      " um romaneio organizado."
+  )
+
+  tipo_relatorio = st.selectbox(
+      "Tipo de Relatório",
+      [
+          "Histórico de Movimentações / Expedição (por Data)",
+          "Pedidos de Clientes (por Data)",
+          "Posição Atual do Stock (Geral / Setor)",
+      ],
+  )
+
+  col_dt1, col_dt2 = st.columns(2)
+  with col_dt1:
+    data_inicio = st.date_input(
+        "Data Inicial", value=datetime.date.today().replace(day=1)
     )
+  with col_dt2:
+    data_fim = st.date_input("Data Final", value=datetime.date.today())
+
+  if data_inicio > data_fim:
+    st.error("⚠️ A Data Inicial não pode ser maior que a Data Final.")
+  else:
+    dt_ini_str = data_inicio.strftime("%Y-%m-%d")
+    dt_fim_str = data_fim.strftime("%Y-%m-%d")
+
+    df_relatorio = pd.DataFrame()
+    titulo_rel = tipo_relatorio
+
+    if tipo_relatorio == "Histórico de Movimentações / Expedição (por Data)":
+      hist_df = st.session_state.historico.copy()
+      if not hist_df.empty and "Data" in hist_df.columns:
+        hist_df["_data_apenas"] = hist_df["Data"].astype(str).str.slice(0, 10)
+        df_relatorio = hist_df[
+            (hist_df["_data_apenas"] >= dt_ini_str)
+            & (hist_df["_data_apenas"] <= dt_fim_str)
+        ].drop(columns=["_data_apenas"])
+
+    elif tipo_relatorio == "Pedidos de Clientes (por Data)":
+      linhas_ped = []
+      for ped in st.session_state.clientes_pedidos:
+        p_data = str(ped.get("data", ""))[:10]
+        if dt_ini_str <= p_data <= dt_fim_str:
+          for itm in ped.get("itens", []):
+            linhas_ped.append({
+                "ID Pedido": ped.get("id_pedido", ""),
+                "Data": ped.get("data", ""),
+                "Cliente": ped.get("cliente", ""),
+                "Produto": itm.get("produto", ""),
+                "Quantidade": itm.get("quantidade", 0),
+                "Status": ped.get("status", ""),
+            })
+      df_relatorio = pd.DataFrame(linhas_ped)
+
+    else:
+      setor_rel = st.selectbox(
+          "Filtrar Stock por Setor",
+          ["Todos os Setores"] + st.session_state.setores,
+          key="rel_stk_setor",
+      )
+      stk_df = df.copy()
+      if setor_rel != "Todos os Setores":
+        stk_df = stk_df[stk_df["Setor"] == setor_rel]
+      colunas_uteis = [
+          c
+          for c in [
+              "Codigo_Barras",
+              "Produto",
+              "Setor",
+              "Lote",
+              "Quantidade",
+              "Limite_Minimo",
+              "Validade",
+              "Ultima_Modificacao",
+          ]
+          if c in stk_df.columns
+      ]
+      df_relatorio = stk_df[colunas_uteis]
+
+    st.markdown("---")
+
+    if df_relatorio.empty:
+      st.info(
+          f"ℹ️ Nenhum registo encontrado entre **{dt_ini_str}** e"
+          f" **{dt_fim_str}**."
+      )
+    else:
+      st.subheader("📋 Pré-visualização Organizada do Romaneio")
+      st.dataframe(df_relatorio, use_container_width=True)
+
+      # Monta tabela HTML limpa e formatada para impressão / guardar como PDF
+      linhas_html = ""
+      for _, linha in df_relatorio.iterrows():
+        celulas = "".join(
+            [
+                f"<td style='padding: 8px; border: 1px solid #ccc;'>{val}</td>"
+                for val in linha.values
+            ]
+        )
+        linhas_html += f"<tr>{celulas}</tr>"
+
+      cabecalhos_html = "".join(
+          [
+              f"<th style='padding: 8px; border: 1px solid #ccc; background-color: #2c3e50; color: white; text-align: left;'>{col}</th>"
+              for col in df_relatorio.columns
+          ]
+      )
+
+      romaneio_html = f"""
+            <div id="romaneio-print" style="background: white; color: #222; padding: 24px; border-radius: 10px; border: 1px solid #ddd; font-family: Arial, sans-serif;">
+                <div style="display: flex; justify-content: space-between; border-bottom: 2px solid #2c3e50; padding-bottom: 10px; margin-bottom: 15px;">
+                    <div>
+                        <h3 style="margin: 0; color: #2c3e50;">🍲 RBM ALIMENTOS — ROMANEIO / RELATÓRIO</h3>
+                        <p style="margin: 4px 0 0 0; font-size: 13px; color: #555;"><b>Tipo:</b> {titulo_rel}</p>
+                    </div>
+                    <div style="text-align: right; font-size: 13px; color: #555;">
+                        <b>Período:</b> {dt_ini_str} a {dt_fim_str}<br>
+                        <b>Gerado em:</b> {datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}<br>
+                        <b>Total de linhas:</b> {len(df_relatorio)}
+                    </div>
+                </div>
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <thead><tr>{cabecalhos_html}</tr></thead>
+                    <tbody>{linhas_html}</tbody>
+                </table>
+            </div>
+            """
+
+      st.markdown("### 🖨️ Romaneio Formatado (Pronto para Imprimir / PDF)")
+      st.markdown(romaneio_html, unsafe_allow_html=True)
+
+      st.markdown("<br>", unsafe_allow_html=True)
+      c_exp1, c_exp2 = st.columns(2)
+
+      with c_exp1:
+        csv_limpo = df_relatorio.to_csv(index=False).encode("utf-8-sig")
+        st.download_button(
+            label="📥 Baixar Planilha Organizada (CSV UTF-8)",
+            data=csv_limpo,
+            file_name=f"romaneio_{dt_ini_str}_a_{dt_fim_str}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+      with c_exp2:
+        html_completo = f"""
+                <!DOCTYPE html>
+                <html>
+                <head><meta charset="utf-8"><title>Romaneio RBM Alimentos</title></head>
+                <body style="margin: 20px;">{romaneio_html}</body>
+                </html>
+                """.encode("utf-8")
+        st.download_button(
+            label="📄 Baixar Romaneio Formatado (HTML / PDF)",
+            data=html_completo,
+            file_name=f"romaneio_{dt_ini_str}_a_{dt_fim_str}.html",
+            mime="text/html",
+            use_container_width=True,
+        )
+
+      st.caption(
+          "💡 Dica: Ao abrir o ficheiro HTML formatado no navegador, basta"
+          " usar Imprimir (Ctrl+P) e escolher 'Salvar como PDF' para ter um"
+          " documento visualmente limpo."
+      )
 
 
 # --- 8. HISTÓRICO ---
