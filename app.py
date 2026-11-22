@@ -296,8 +296,12 @@ if "mensagens" not in st.session_state:
 
 if "clientes" not in st.session_state:
   clientes_padrao = [
-      {
-          "razao_social": "Neriah Comercio de Alimentos LTDA",
-          "nome_fantasia": "Neriah Comércio",
-          "cnpj": "12.345.678/0001-99",
-          "endereco": "Rua Principal, 100 - Florianópolis -
+
+    {
+        "razao_social": "Neriah Comercio de Alimentos LTDA",
+        "nome_fantasia": "Neriah Comércio",
+        "cnpj": "12.345.678/0001-99",
+        "endereco": "Rua Principal, 100 - Florianópolis - SC",
+        "contacto": "(48) 99999-9999",
+    }
+]
