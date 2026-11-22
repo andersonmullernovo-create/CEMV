@@ -408,7 +408,64 @@ else:
   fundo_efetivo = bg_css
 
 st.markdown(
+   cfg = st.session_state.config_visual
+bg_css = TEMAS_FUNDO.get(
+    cfg.get("fundo_app", "Gradiente Azul Moderno"),
+    TEMAS_FUNDO["Gradiente Azul Moderno"],
+)
+url_wp = cfg.get("url_papel_parede", "").strip()
+b64_wp_local = carregar_bg_base64("papel_parede.jpg")
+
+if url_wp:
+  fundo_efetivo = (
+      f'linear-gradient(rgba(245, 247, 250, 0.85), rgba(245, 247, 250, 0.85)),'
+      f' url("{url_wp}")'
+  )
+elif b64_wp_local:
+  fundo_efetivo = (
+      f"linear-gradient(rgba(245, 247, 250, 0.85), rgba(245, 247, 250, 0.85)),"
+      f' url("data:image/jpeg;base64,{b64_wp_local}")'
+  )
+else:
+  fundo_efetivo = bg_css
+
+st.markdown(
     f"""
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
     html, body, .stApp, p, label, input, textarea, select, button {{
+        font-family: 'Poppins', sans-serif !important;
+    }}
+    html, body, [class*="css"] {{
+        font-size: {cfg.get('tamanho_fonte', '16px')} !important;
+        color: {cfg.get('cor_texto', '#31333F')} !important;
+    }}
+    .stApp {{
+        background: {fundo_efetivo} !important;
+        background-size: cover !important;
+        background-position: center !important;
+        background-attachment: fixed !important;
+    }}
+    section[data-testid="stSidebar"] {{
+        min-width: 270px !important;
+        overflow-y: auto !important;
+    }}
+    section[data-testid="stSidebar"] > div:first-child {{
+        overflow-y: auto !important;
+        max-height: 100vh !important;
+    }}
+    .stDataFrame {{
+        background-color: {cfg.get('cor_fundo_tabela', '#f9f9f9')} !important;
+    }}
+    div[data-testid="stVerticalBlock"] > div[style*="border-color"],
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
+        background-color: rgba(255, 255, 255, 0.95);
+        border-radius: 14px;
+        box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        padding: 20px;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
