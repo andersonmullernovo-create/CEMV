@@ -1,18 +1,27 @@
+import base64
 import datetime
+import hashlib
 import json
 import os
 import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
+try:
+  from streamlit_gsheets import GSheetsConnection
+
+  HAS_GSHEETS_LIB = True
+except ImportError:
+  HAS_GSHEETS_LIB = False
+
 # Configuração da página orientada ao setor alimentício
 st.set_page_config(
-    page_title="Controle de Estoque",
+    page_title="Gestão de Stock - RBM Alimentos",
     page_icon="🍲",
     layout="wide",
 )
 
-# --- FICHEIROS DE PERSISTÊNCIA LOCAL ---
+# --- FICHEIROS DE PERSISTÊNCIA LOCAL (FALLBACK) ---
 ARQ_ESTOQUE = "estoque_rbm_dados.csv"
 ARQ_SETORES = "setores_rbm_dados.json"
 ARQ_USERS = "users_rbm_dados.json"
@@ -37,66 +46,212 @@ TEMAS_FUNDO = {
 }
 
 
+# --- SEGURANÇA DE SENHAS (HASH SHA-256) ---
+def hash_senha(senha: str) -> str:
+  return hashlib.sha256(str(senha).encode("utf-8")).hexdigest()
+
+
+def verificar_senha(senha_digitada: str, senha_guardada: str) -> bool:
+  if not senha_guardada:
+    return False
+  # Se já for um hash SHA-256 hexadecimal de 64 caracteres
+  if len(senha_guardada) == 64 and all(
+      c in "0123456789abcdef" for c in senha_guardada.lower()
+  ):
+    return hash_senha(senha_digitada) == senha_guardada.lower()
+  # Compatibilidade com senha legada em texto puro
+  return senha_digitada == senha_guardada
+
+
+# --- CAMADA DE PERSISTÊNCIA (GOOGLE SHEETS SE CONFIGURADO + DISCO LOCAL) ---
+def _gsheets_ativo() -> bool:
+  if not HAS_GSHEETS_LIB:
+    return False
+  try:
+    return "connections" in st.secrets and "gsheets" in st.secrets["connections"]
+  except Exception:
+    return False
+
+
+def _get_conn():
+  return st.connection("gsheets", type=GSheetsConnection)
+
+
+def ler_json_persistente(aba: str, caminho_local: str, padrao):
+  if _gsheets_ativo():
+    try:
+      conn = _get_conn()
+      df_aba = conn.read(worksheet=aba, ttl=0)
+      if (
+          df_aba is not None
+          and not df_aba.empty
+          and "payload_json" in df_aba.columns
+      ):
+        raw = str(df_aba.iloc[0]["payload_json"]).strip()
+        if raw and raw != "nan":
+          dados = json.loads(raw)
+          with open(caminho_local, "w", encoding="utf-8") as f:
+            json.dump(dados, f, ensure_ascii=False)
+          return dados
+    except Exception:
+      pass
+
+  if os.path.exists(caminho_local):
+    try:
+      with open(caminho_local, "r", encoding="utf-8") as f:
+        return json.load(f)
+    except Exception:
+      pass
+  return padrao
+
+
+def salvar_json_persistente(aba: str, caminho_local: str, dados):
+  with open(caminho_local, "w", encoding="utf-8") as f:
+    json.dump(dados, f, ensure_ascii=False)
+
+  if _gsheets_ativo():
+    try:
+      conn = _get_conn()
+      df_payload = pd.DataFrame(
+          [{"payload_json": json.dumps(dados, ensure_ascii=False)}]
+      )
+      conn.update(worksheet=aba, data=df_payload)
+    except Exception as e:
+      st.toast(f"⚠️ Aviso ao sincronizar '{aba}' na nuvem: {e}")
+
+
+def ler_df_persistente(aba: str, caminho_local: str, padrao_df: pd.DataFrame) -> pd.DataFrame:
+  if _gsheets_ativo():
+    try:
+      conn = _get_conn()
+      df_aba = conn.read(worksheet=aba, ttl=0)
+      if df_aba is not None and not df_aba.empty:
+        df_aba.to_csv(caminho_local, index=False)
+        return df_aba
+    except Exception:
+      pass
+
+  if os.path.exists(caminho_local):
+    try:
+      return pd.read_csv(caminho_local)
+    except Exception:
+      pass
+  return padrao_df.copy()
+
+
+def salvar_df_persistente(aba: str, caminho_local: str, df_alvo: pd.DataFrame):
+  df_alvo.to_csv(caminho_local, index=False)
+  if _gsheets_ativo():
+    try:
+      conn = _get_conn()
+      conn.update(worksheet=aba, data=df_alvo)
+    except Exception as e:
+      st.toast(f"⚠️ Aviso ao sincronizar '{aba}' na nuvem: {e}")
+
+
 def salvar_estoque():
-  st.session_state.estoque.to_csv(ARQ_ESTOQUE, index=False)
+  salvar_df_persistente("estoque", ARQ_ESTOQUE, st.session_state.estoque)
 
 
 def salvar_setores():
-  with open(ARQ_SETORES, "w", encoding="utf-8") as f:
-    json.dump(st.session_state.setores, f, ensure_ascii=False)
+  salvar_json_persistente("setores", ARQ_SETORES, st.session_state.setores)
 
 
 def salvar_users():
-  with open(ARQ_USERS, "w", encoding="utf-8") as f:
-    json.dump(st.session_state.users, f, ensure_ascii=False)
+  salvar_json_persistente("users", ARQ_USERS, st.session_state.users)
 
 
 def salvar_historico():
-  st.session_state.historico.to_csv(ARQ_HIST, index=False)
+  salvar_df_persistente("historico", ARQ_HIST, st.session_state.historico)
 
 
 def salvar_config():
-  with open(ARQ_CONFIG, "w", encoding="utf-8") as f:
-    json.dump(st.session_state.config_visual, f, ensure_ascii=False)
+  salvar_json_persistente(
+      "config_visual", ARQ_CONFIG, st.session_state.config_visual
+  )
 
 
 def salvar_mensagens():
-  with open(ARQ_MENSAGENS, "w", encoding="utf-8") as f:
-    json.dump(st.session_state.mensagens, f, ensure_ascii=False)
+  salvar_json_persistente(
+      "mensagens", ARQ_MENSAGENS, st.session_state.mensagens
+  )
 
 
 def salvar_clientes():
-  with open(ARQ_CLIENTES, "w", encoding="utf-8") as f:
-    json.dump(st.session_state.clientes, f, ensure_ascii=False)
+  salvar_json_persistente("clientes", ARQ_CLIENTES, st.session_state.clientes)
 
 
 def salvar_clientes_pedidos():
-  with open(ARQ_CLIENTES_PEDIDOS, "w", encoding="utf-8") as f:
-    json.dump(st.session_state.clientes_pedidos, f, ensure_ascii=False)
+  salvar_json_persistente(
+      "clientes_pedidos", ARQ_CLIENTES_PEDIDOS, st.session_state.clientes_pedidos
+  )
+
+
+def recarregar_mensagens_frescas():
+  st.session_state.mensagens = ler_json_persistente(
+      "mensagens", ARQ_MENSAGENS, []
+  )
+
+
+def recarregar_estoque_fresco():
+  df_padrao = pd.DataFrame(
+      columns=[
+          "Codigo_Barras",
+          "Produto",
+          "Descricao",
+          "Unidades_Embalagem",
+          "Tipo_Item",
+          "Setor",
+          "Quantidade",
+          "Limite_Minimo",
+          "Lote",
+          "Fabricacao",
+          "Validade",
+          "Ultima_Modificacao",
+          "Modificado_Por",
+      ]
+  )
+  st.session_state.estoque = ler_df_persistente(
+      "estoque", ARQ_ESTOQUE, df_padrao
+  )
+
+
+def carregar_bg_base64(caminho: str):
+  if caminho and os.path.exists(caminho):
+    try:
+      with open(caminho, "rb") as f:
+        return base64.b64encode(f.read()).decode("utf-8")
+    except Exception:
+      return None
+  return None
 
 
 # --- INICIALIZAÇÃO COM CARREGAMENTO PERSISTENTE ---
 if "users" not in st.session_state:
-  if os.path.exists(ARQ_USERS):
-    with open(ARQ_USERS, "r", encoding="utf-8") as f:
-      st.session_state.users = json.load(f)
-  else:
-    st.session_state.users = {
-        "admin": {
-            "senha": "1234",
-            "perfil": "Administrador",
-            "pode_cadastrar": True,
-            "pode_excluir": True,
-            "pode_movimentar": True,
-        },
-        "operador": {
-            "senha": "abcd",
-            "perfil": "Operador",
-            "pode_cadastrar": False,
-            "pode_excluir": False,
-            "pode_movimentar": True,
-        },
-    }
+  users_padrao = {
+      "admin": {
+          "senha_hash": hash_senha("1234"),
+          "perfil": "Administrador",
+          "pode_cadastrar": True,
+          "pode_excluir": True,
+          "pode_movimentar": True,
+      },
+      "operador": {
+          "senha_hash": hash_senha("abcd"),
+          "perfil": "Operador",
+          "pode_cadastrar": False,
+          "pode_excluir": False,
+          "pode_movimentar": True,
+      },
+  }
+  carregados = ler_json_persistente("users", ARQ_USERS, users_padrao)
+  migrado = False
+  for _, info in carregados.items():
+    if "senha_hash" not in info and "senha" in info:
+      info["senha_hash"] = hash_senha(info.pop("senha"))
+      migrado = True
+  st.session_state.users = carregados
+  if not os.path.exists(ARQ_USERS) or migrado:
     salvar_users()
 
 if "logged_in" not in st.session_state:
@@ -105,145 +260,187 @@ if "logged_in" not in st.session_state:
   st.session_state.perfil = ""
 
 if "config_visual" not in st.session_state:
-  if os.path.exists(ARQ_CONFIG):
-    with open(ARQ_CONFIG, "r", encoding="utf-8") as f:
-      st.session_state.config_visual = json.load(f)
-  else:
-    st.session_state.config_visual = {
-        "tamanho_fonte": "16px",
-        "cor_fundo_tabela": "#f9f9f9",
-        "cor_texto": "#31333F",
-        "fundo_app": "Gradiente Azul Moderno",
-        "fundo_login": "Gradiente Azul Moderno",
-    }
+  cfg_padrao = {
+      "tamanho_fonte": "16px",
+      "cor_fundo_tabela": "#f9f9f9",
+      "cor_texto": "#31333F",
+      "fundo_app": "Gradiente Azul Moderno",
+      "fundo_login": "Gradiente Azul Moderno",
+      "url_papel_parede": "",
+  }
+  st.session_state.config_visual = ler_json_persistente(
+      "config_visual", ARQ_CONFIG, cfg_padrao
+  )
+  st.session_state.config_visual.setdefault("url_papel_parede", "")
+  if not os.path.exists(ARQ_CONFIG):
     salvar_config()
 
 if "historico" not in st.session_state:
-  if os.path.exists(ARQ_HIST):
-    st.session_state.historico = pd.read_csv(ARQ_HIST)
-  else:
-    st.session_state.historico = pd.DataFrame(
-        columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"]
-    )
+  hist_padrao = pd.DataFrame(
+      columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"]
+  )
+  st.session_state.historico = ler_df_persistente(
+      "historico", ARQ_HIST, hist_padrao
+  )
+  if not os.path.exists(ARQ_HIST):
     salvar_historico()
 
 if "mensagens" not in st.session_state:
-  if os.path.exists(ARQ_MENSAGENS):
-    with open(ARQ_MENSAGENS, "r", encoding="utf-8") as f:
-      st.session_state.mensagens = json.load(f)
-  else:
-    st.session_state.mensagens = []
+  st.session_state.mensagens = ler_json_persistente(
+      "mensagens", ARQ_MENSAGENS, []
+  )
+  if not os.path.exists(ARQ_MENSAGENS):
     salvar_mensagens()
 
 if "clientes" not in st.session_state:
-  if os.path.exists(ARQ_CLIENTES):
-    with open(ARQ_CLIENTES, "r", encoding="utf-8") as f:
-      st.session_state.clientes = json.load(f)
-  else:
-    st.session_state.clientes = [
-        {
-            "razao_social": "Neriah Comercio de Alimentos LTDA",
-            "nome_fantasia": "Neriah Comércio",
-            "cnpj": "12.345.678/0001-99",
-            "endereco": "Rua Principal, 100 - Florianópolis - SC",
-            "contacto": "(48) 99999-9999",
-        }
-    ]
+  clientes_padrao = [
+      {
+          "razao_social": "Neriah Comercio de Alimentos LTDA",
+          "nome_fantasia": "Neriah Comércio",
+          "cnpj": "12.345.678/0001-99",
+          "endereco": "Rua Principal, 100 - Florianópolis - SC",
+          "contacto": "(48) 99999-9999",
+      }
+  ]
+  st.session_state.clientes = ler_json_persistente(
+      "clientes", ARQ_CLIENTES, clientes_padrao
+  )
+  if not os.path.exists(ARQ_CLIENTES):
     salvar_clientes()
 
 if "clientes_pedidos" not in st.session_state:
-  if os.path.exists(ARQ_CLIENTES_PEDIDOS):
-    with open(ARQ_CLIENTES_PEDIDOS, "r", encoding="utf-8") as f:
-      st.session_state.clientes_pedidos = json.load(f)
-  else:
-    st.session_state.clientes_pedidos = []
+  st.session_state.clientes_pedidos = ler_json_persistente(
+      "clientes_pedidos", ARQ_CLIENTES_PEDIDOS, []
+  )
+  if not os.path.exists(ARQ_CLIENTES_PEDIDOS):
     salvar_clientes_pedidos()
 
 if "agenda_eventos" not in st.session_state:
   st.session_state.agenda_eventos = []
 
 if "setores" not in st.session_state:
-  if os.path.exists(ARQ_SETORES):
-    with open(ARQ_SETORES, "r", encoding="utf-8") as f:
-      st.session_state.setores = json.load(f)
-  else:
-    st.session_state.setores = [
-        "Armazém Central",
-        "Câmara Fria",
-        "Secos e Molhados",
-    ]
+  setores_padrao = ["Armazém Central", "Câmara Fria", "Secos e Molhados"]
+  st.session_state.setores = ler_json_persistente(
+      "setores", ARQ_SETORES, setores_padrao
+  )
+  if not os.path.exists(ARQ_SETORES):
     salvar_setores()
 
 if "pedidos_ativos" not in st.session_state:
   st.session_state.pedidos_ativos = {}
 
 if "estoque" not in st.session_state:
-  if os.path.exists(ARQ_ESTOQUE):
-    st.session_state.estoque = pd.read_csv(ARQ_ESTOQUE)
-  else:
-    st.session_state.estoque = pd.DataFrame({
-        "Codigo_Barras": ["789101", "789102", "789103"],
-        "Produto": [
-            "Calzone Chocolate (12 un)",
-            "Farinha de Trigo (Kg)",
-            "Óleo de Soja (L)",
-        ],
-        "Descricao": [
-            "Calzone doce de chocolate",
-            "Farinha tipo 1 refinada",
-            "Óleo vegetal de soja",
-        ],
-        "Unidades_Embalagem": [12, 10, 20],
-        "Tipo_Item": ["Produto Acabado", "Matéria-Prima", "Insumo"],
-        "Setor": ["Secos e Molhados", "Secos e Molhados", "Câmara Fria"],
-        "Quantidade": [40, 30, 20],
-        "Limite_Minimo": [10, 25, 5],
-        "Lote": ["LOT-2026-A", "LOT-2026-B", "LOT-2026-C"],
-        "Fabricacao": ["2026-10-01", "2026-09-15", "2026-10-10"],
-        "Validade": ["2026-11-15", "2027-05-20", "2026-11-10"],
-        "Ultima_Modificacao": ["2026-11-01", "2026-11-05", "2026-11-10"],
-        "Modificado_Por": ["admin", "operador", "admin"],
-    })
+  estoque_padrao = pd.DataFrame({
+      "Codigo_Barras": ["789101", "789102", "789103"],
+      "Produto": [
+          "Calzone Chocolate (12 un)",
+          "Farinha de Trigo (Kg)",
+          "Óleo de Soja (L)",
+      ],
+      "Descricao": [
+          "Calzone doce de chocolate",
+          "Farinha tipo 1 refinada",
+          "Óleo vegetal de soja",
+      ],
+      "Unidades_Embalagem": [12, 10, 20],
+      "Tipo_Item": ["Produto Acabado", "Matéria-Prima", "Insumo"],
+      "Setor": ["Secos e Molhados", "Secos e Molhados", "Câmara Fria"],
+      "Quantidade": [40, 30, 20],
+      "Limite_Minimo": [10, 25, 5],
+      "Lote": ["LOT-2026-A", "LOT-2026-B", "LOT-2026-C"],
+      "Fabricacao": ["2026-10-01", "2026-09-15", "2026-10-10"],
+      "Validade": ["2026-11-15", "2027-05-20", "2026-11-10"],
+      "Ultima_Modificacao": ["2026-11-01", "2026-11-05", "2026-11-10"],
+      "Modificado_Por": ["admin", "operador", "admin"],
+  })
+  st.session_state.estoque = ler_df_persistente(
+      "estoque", ARQ_ESTOQUE, estoque_padrao
+  )
+  if not os.path.exists(ARQ_ESTOQUE):
     salvar_estoque()
 
 if "Lote" not in st.session_state.estoque.columns:
   st.session_state.estoque["Lote"] = "LOT-GERAL"
+st.session_state.estoque["Codigo_Barras"] = (
+    st.session_state.estoque["Codigo_Barras"].astype(str).str.strip()
+)
+st.session_state.estoque["Quantidade"] = (
+    pd.to_numeric(st.session_state.estoque["Quantidade"], errors="coerce")
+    .fillna(0)
+    .astype(int)
+)
+st.session_state.estoque["Limite_Minimo"] = (
+    pd.to_numeric(st.session_state.estoque["Limite_Minimo"], errors="coerce")
+    .fillna(0)
+    .astype(int)
+)
 
 # Capturar código vindo do leitor ótico da câmara em tempo real
 if "scanned_code" in st.query_params:
-  st.session_state["codigo_lido_ativo"] = st.query_params["scanned_code"]
+  st.session_state["codigo_lido_ativo"] = str(
+      st.query_params["scanned_code"]
+  ).strip()
   st.query_params.clear()
   st.rerun()
 
+# --- VISUAL, FONTES, PAPEL DE PAREDE & MENU FIXO ---
 cfg = st.session_state.config_visual
 bg_css = TEMAS_FUNDO.get(
-    cfg.get("fundo_app", "Gradiente Azul Moderno"), TEMAS_FUNDO["Gradiente Azul Moderno"]
+    cfg.get("fundo_app", "Gradiente Azul Moderno"),
+    TEMAS_FUNDO["Gradiente Azul Moderno"],
 )
+url_wp = cfg.get("url_papel_parede", "").strip()
+b64_wp_local = carregar_bg_base64("papel_parede.jpg")
+
+if url_wp:
+  fundo_efetivo = (
+      f'linear-gradient(rgba(245, 247, 250, 0.85), rgba(245, 247, 250, 0.85)),'
+      f' url("{url_wp}")'
+  )
+elif b64_wp_local:
+  fundo_efetivo = (
+      f"linear-gradient(rgba(245, 247, 250, 0.85), rgba(245, 247, 250, 0.85)),"
+      f' url("data:image/jpeg;base64,{b64_wp_local}")'
+  )
+else:
+  fundo_efetivo = bg_css
 
 st.markdown(
     f"""
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-    * {{
-        -webkit-touch-callout: none !important;
-        -webkit-user-select: none !important;
-        user-select: none !important;
-    }}
-    input, textarea, select {{
-        -webkit-user-select: text !important;
-        user-select: text !important;
+    html, body, .stApp, p, label, input, textarea, select, button {{
+        font-family: 'Poppins', sans-serif !important;
     }}
     html, body, [class*="css"] {{
         font-size: {cfg.get('tamanho_fonte', '16px')} !important;
         color: {cfg.get('cor_texto', '#31333F')} !important;
     }}
     .stApp {{
-        background: {bg_css};
-        background-attachment: fixed;
+        background: {fundo_efetivo} !important;
+        background-size: cover !important;
+        background-position: center !important;
+        background-attachment: fixed !important;
+    }}
+    @media (min-width: 769px) {{
+        section[data-testid="stSidebar"] {{
+            position: fixed !important;
+            top: 0;
+            left: 0;
+            height: 100vh !important;
+            width: 280px !important;
+            min-width: 280px !important;
+            z-index: 99;
+        }}
+        section.main > div.block-container {{
+            margin-left: 280px;
+        }}
     }}
     .stDataFrame {{
         background-color: {cfg.get('cor_fundo_tabela', '#f9f9f9')} !important;
     }}
-    div[data-testid="stVerticalBlock"] > div[style*="border-color"] {{
+    div[data-testid="stVerticalBlock"] > div[style*="border-color"],
+    div[data-testid="stVerticalBlockBorderWrapper"] {{
         background-color: rgba(255, 255, 255, 0.95);
         border-radius: 14px;
         box-shadow: 0 8px 16px rgba(0, 0, 0, 0.08);
@@ -289,7 +486,7 @@ if not st.session_state.logged_in:
       )
       st.markdown("---")
 
-      user_input = st.text_input("👤 Utilizador", key="login_user")
+      user_input = st.text_input("👤 Utilizador", key="login_user").strip()
       pass_input = st.text_input(
           "🔑 Senha de Acesso", type="password", key="login_pass"
       )
@@ -298,13 +495,19 @@ if not st.session_state.logged_in:
       if st.button(
           "🚀 Entrar no Sistema", type="primary", use_container_width=True
       ):
-        if (
-            user_input in st.session_state.users
-            and st.session_state.users[user_input]["senha"] == pass_input
-        ):
+        u_dados = st.session_state.users.get(user_input)
+        senha_armazenada = (
+            u_dados.get("senha_hash", u_dados.get("senha", "")) if u_dados else ""
+        )
+        if u_dados and verificar_senha(pass_input, senha_armazenada):
+          # Atualiza para hash caso estivesse em formato antigo
+          if "senha_hash" not in u_dados:
+            u_dados["senha_hash"] = hash_senha(pass_input)
+            u_dados.pop("senha", None)
+            salvar_users()
           st.session_state.logged_in = True
           st.session_state.username = user_input
-          st.session_state.perfil = st.session_state.users[user_input]["perfil"]
+          st.session_state.perfil = u_dados["perfil"]
           st.success("Login efetuado com sucesso!")
           st.rerun()
         else:
@@ -323,12 +526,13 @@ permissoes_atuais = st.session_state.users.get(
 # --- BARRA LATERAL ---
 st.sidebar.title(f"👤 {st.session_state.username}")
 st.sidebar.caption(f"Perfil: **{st.session_state.perfil}**")
+st.sidebar.caption(
+    "☁️ Cloud Sync: **Ativo (Google Sheets)**"
+    if _gsheets_ativo()
+    else "💾 Modo: **Local / Sessão**"
+)
 
-# Recarregar mensagens não lidas em tempo real
-if os.path.exists(ARQ_MENSAGENS):
-  with open(ARQ_MENSAGENS, "r", encoding="utf-8") as f:
-    st.session_state.mensagens = json.load(f)
-
+recarregar_mensagens_frescas()
 msgs_nao_lidas = [
     m
     for m in st.session_state.mensagens
@@ -386,7 +590,7 @@ if menu == "⚙️ Painel do Administrador & Agenda":
   with tab_adm1:
     with st.container(border=True):
       st.subheader("Registar ou Modificar Utilizador")
-      novo_user = st.text_input("Nome do Utilizador")
+      novo_user = st.text_input("Nome do Utilizador").strip()
       nova_senha = st.text_input("Senha de Acesso", type="password")
       novo_perfil = st.selectbox("Perfil", ["Operador", "Administrador"])
       col_p1, col_p2, col_p3 = st.columns(3)
@@ -399,7 +603,7 @@ if menu == "⚙️ Painel do Administrador & Agenda":
       if st.button("Guardar Utilizador"):
         if novo_user and nova_senha:
           st.session_state.users[novo_user] = {
-              "senha": nova_senha,
+              "senha_hash": hash_senha(nova_senha),
               "perfil": novo_perfil,
               "pode_cadastrar": pode_cad,
               "pode_excluir": pode_exc,
@@ -458,11 +662,13 @@ if menu == "⚙️ Painel do Administrador & Agenda":
       data_evento = st.date_input("Data")
       desc_evento = st.text_input("Descrição")
       if st.button("Adicionar Evento"):
-        if desc_evento:
+        if desc_evento and desc_evento.strip():
           st.session_state.agenda_eventos.append(
-              {"data": str(data_evento), "evento": desc_evento}
+              {"data": str(data_evento), "evento": desc_evento.strip()}
           )
           st.success("Adicionado!")
+        else:
+          st.error("Informe uma descrição para o evento.")
     st.markdown("<br>", unsafe_allow_html=True)
     for ev in st.session_state.agenda_eventos:
       st.write(f"📅 **{ev['data']}**: {ev['evento']}")
@@ -470,51 +676,70 @@ if menu == "⚙️ Painel do Administrador & Agenda":
   with tab_adm4:
     with st.container(border=True):
       st.subheader("✏️ Edição Rápida de Itens Cadastrados")
-      prod_editar = st.selectbox(
-          "Selecione o produto", df["Produto"].tolist(), key="sel_ed"
-      )
-      if prod_editar:
-        idx_ed = df[df["Produto"] == prod_editar].index[0]
-        nn = st.text_input("Nome", value=df.loc[idx_ed, "Produto"], key="ed_n")
-        nd = st.text_area(
-            "Descrição", value=df.loc[idx_ed, "Descricao"], key="ed_d"
+      if df.empty:
+        st.info("Nenhum produto disponível para editar.")
+      else:
+        prod_editar = st.selectbox(
+            "Selecione o produto", df["Produto"].tolist(), key="sel_ed"
         )
-        ne = st.number_input(
-            "Embalagem",
-            min_value=1,
-            value=int(df.loc[idx_ed, "Unidades_Embalagem"]),
-            key="ed_e",
-        )
-        nm = st.number_input(
-            "Mínimo",
-            min_value=0,
-            value=int(df.loc[idx_ed, "Limite_Minimo"]),
-            key="ed_m",
-        )
-        ns = st.selectbox(
-            "Setor",
-            st.session_state.setores,
-            index=(
-                st.session_state.setores.index(df.loc[idx_ed, "Setor"])
-                if df.loc[idx_ed, "Setor"] in st.session_state.setores
-                else 0
-            ),
-            key="ed_s",
-        )
-        if st.button("Guardar Alterações"):
-          df.loc[idx_ed, "Produto"] = nn
-          df.loc[idx_ed, "Descricao"] = nd
-          df.loc[idx_ed, "Unidades_Embalagem"] = ne
-          df.loc[idx_ed, "Limite_Minimo"] = nm
-          df.loc[idx_ed, "Setor"] = ns
-          salvar_estoque()
-          st.success("Atualizado e guardado com sucesso!")
-          st.rerun()
+        if prod_editar:
+          idx_ed = df[df["Produto"] == prod_editar].index[0]
+          nn = st.text_input(
+              "Nome", value=str(df.loc[idx_ed, "Produto"]), key="ed_n"
+          )
+          nd = st.text_area(
+              "Descrição", value=str(df.loc[idx_ed, "Descricao"]), key="ed_d"
+          )
+          ne = st.number_input(
+              "Embalagem",
+              min_value=1,
+              value=int(df.loc[idx_ed, "Unidades_Embalagem"]),
+              key="ed_e",
+          )
+          nm = st.number_input(
+              "Mínimo",
+              min_value=0,
+              value=int(df.loc[idx_ed, "Limite_Minimo"]),
+              key="ed_m",
+          )
+          ns = st.selectbox(
+              "Setor",
+              st.session_state.setores,
+              index=(
+                  st.session_state.setores.index(df.loc[idx_ed, "Setor"])
+                  if df.loc[idx_ed, "Setor"] in st.session_state.setores
+                  else 0
+              ),
+              key="ed_s",
+          )
+          if st.button("Guardar Alterações"):
+            if not nn.strip():
+              st.error("⚠️ O nome do produto não pode ficar em branco.")
+            else:
+              recarregar_estoque_fresco()
+              df_atual = st.session_state.estoque
+              mask_ed = df_atual["Produto"] == prod_editar
+              if mask_ed.any():
+                idx_real = df_atual[mask_ed].index[0]
+                df_atual.loc[idx_real, "Produto"] = nn.strip()
+                df_atual.loc[idx_real, "Descricao"] = nd.strip()
+                df_atual.loc[idx_real, "Unidades_Embalagem"] = int(ne)
+                df_atual.loc[idx_real, "Limite_Minimo"] = int(nm)
+                df_atual.loc[idx_real, "Setor"] = ns
+                df_atual.loc[idx_real, "Ultima_Modificacao"] = (
+                    datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                )
+                df_atual.loc[idx_real, "Modificado_Por"] = (
+                    st.session_state.username
+                )
+                salvar_estoque()
+                st.success("Atualizado e guardado com sucesso!")
+                st.rerun()
 
   with tab_adm5:
     with st.container(border=True):
       st.subheader("💾 Backup e Restauro de Dados")
-      csv_data = df.to_csv(index=False).encode("utf-8")
+      csv_data = df.to_csv(index=False).encode("utf-8-sig")
       st.download_button(
           label="📥 Descarregar Backup do Stock (CSV)",
           data=csv_data,
@@ -529,26 +754,44 @@ if menu == "⚙️ Painel do Administrador & Agenda":
         if st.button("🔄 Confirmar Restauro do Stock"):
           try:
             df_restaurado = pd.read_csv(uploaded_backup)
-            st.session_state.estoque = df_restaurado
-            salvar_estoque()
-            st.success("Stock restaurado com sucesso!")
-            st.rerun()
+            colunas_obrigatorias = {"Produto", "Codigo_Barras", "Quantidade"}
+            if not colunas_obrigatorias.issubset(set(df_restaurado.columns)):
+              st.error(
+                  "⚠️ O CSV enviado não contém as colunas obrigatórias"
+                  " (Produto, Codigo_Barras, Quantidade)."
+              )
+            else:
+              st.session_state.estoque = df_restaurado
+              salvar_estoque()
+              st.success("Stock restaurado com sucesso!")
+              st.rerun()
           except Exception as e:
             st.error(f"Erro ao ler o ficheiro: {e}")
 
   with tab_adm6:
     with st.container(border=True):
       st.subheader("🎨 Estilo & Eliminação de Produtos")
-      prod_ex = st.selectbox(
-          "Eliminar Produto do Catálogo", df["Produto"].tolist(), key="ex_p"
-      )
-      if st.button("Confirmar Eliminação"):
-        st.session_state.estoque = df[
-            df["Produto"] != prod_ex
-        ].reset_index(drop=True)
-        salvar_estoque()
-        st.success("Produto eliminado com sucesso!")
-        st.rerun()
+      if df.empty:
+        st.info("Nenhum produto para eliminar.")
+      else:
+        prod_ex = st.selectbox(
+            "Eliminar Produto do Catálogo", df["Produto"].tolist(), key="ex_p"
+        )
+        confirmar_ex = st.checkbox(
+            "Confirmo que desejo eliminar este produto permanentemente",
+            key="chk_ex_prod",
+        )
+        if st.button("Confirmar Eliminação"):
+          if not confirmar_ex:
+            st.warning("⚠️ Marque a caixa de confirmação antes de eliminar.")
+          else:
+            recarregar_estoque_fresco()
+            st.session_state.estoque = st.session_state.estoque[
+                st.session_state.estoque["Produto"] != prod_ex
+            ].reset_index(drop=True)
+            salvar_estoque()
+            st.success("Produto eliminado com sucesso!")
+            st.rerun()
 
 
 # --- PÁGINA DE CONFIGURAÇÃO VISUAL ---
@@ -587,6 +830,11 @@ elif menu == "⚙️ Configuração":
           lista_temas,
           index=idx_login,
       )
+      prev_url_wp = st.text_input(
+          "🌐 URL de Imagem de Papel de Parede (opcional)",
+          value=cfg.get("url_papel_parede", ""),
+          placeholder="https://exemplo.com/fundo.jpg",
+      )
 
       tamanhos_disponiveis = ["14px", "15px", "16px", "18px", "20px"]
       idx_tam = (
@@ -613,20 +861,25 @@ elif menu == "⚙️ Configuração":
       ):
         st.session_state.config_visual["fundo_app"] = prev_fundo_app
         st.session_state.config_visual["fundo_login"] = prev_fundo_login
+        st.session_state.config_visual["url_papel_parede"] = prev_url_wp.strip()
         st.session_state.config_visual["tamanho_fonte"] = prev_tamanho
-        st.session_state.config_visual["cor_texto"] = prev_cor_texto
-        st.session_state.config_visual["cor_fundo_tabela"] = prev_cor_tabela
+        st.session_state.config_visual["cor_texto"] = prev_cor_texto.strip()
+        st.session_state.config_visual["cor_fundo_tabela"] = (
+            prev_cor_tabela.strip()
+        )
         salvar_config()
         st.success("✨ Configurações aplicadas e guardadas com sucesso!")
         st.rerun()
 
   with col_cfg2:
     st.subheader("👁️ Pré-visualização ao Vivo")
-    bg_preview_css = TEMAS_FUNDO.get(
-        prev_fundo_app, TEMAS_FUNDO["Gradiente Azul Moderno"]
+    bg_preview_css = (
+        f'linear-gradient(rgba(245, 247, 250, 0.85), rgba(245, 247, 250, 0.85)), url("{prev_url_wp.strip()}")'
+        if prev_url_wp.strip()
+        else TEMAS_FUNDO.get(prev_fundo_app, TEMAS_FUNDO["Gradiente Azul Moderno"])
     )
     preview_html = """
-        <div style="background: {}; padding: 25px; border-radius: 14px; border: 2px dashed #007bff; color: {}; font-size: {}; font-family: sans-serif;">
+        <div style="background: {}; background-size: cover; background-position: center; padding: 25px; border-radius: 14px; border: 2px dashed #007bff; color: {}; font-size: {}; font-family: 'Poppins', sans-serif;">
             <h3 style="margin-top:0; color: {};">🔍 Exemplo de Cartão RBM</h3>
             <p>Este é o aspeto do texto principal com a fonte <b>{}</b>.</p>
             <div style="background-color: {}; padding: 12px; border-radius: 8px; border: 1px solid #ccc; margin-top: 10px;">
@@ -654,8 +907,12 @@ elif menu == "🍲 Consultar Stock & Setores":
   hoje_str = datetime.date.today().strftime("%Y-%m-%d")
   total_skus = len(df)
   total_qtd = int(df["Quantidade"].sum()) if not df.empty else 0
-  criticos = len(df[df["Quantidade"] <= df["Limite_Minimo"]])
-  vencidos = len(df[df["Validade"] <= hoje_str])
+  criticos = (
+      len(df[df["Quantidade"] <= df["Limite_Minimo"]]) if not df.empty else 0
+  )
+  vencidos = (
+      len(df[df["Validade"].astype(str) <= hoje_str]) if not df.empty else 0
+  )
 
   k1, k2, k3, k4 = st.columns(4)
   k1.metric("📦 Total de Produtos (SKUs)", total_skus)
@@ -677,20 +934,20 @@ elif menu == "🍲 Consultar Stock & Setores":
     df_f = df_f[df_f["Setor"] == setor_filtro]
   if pesquisa:
     df_f = df_f[
-        df_f["Produto"].str.contains(pesquisa, case=False, na=False)
-        | df_f["Codigo_Barras"].str.contains(pesquisa, case=False, na=False)
-        | df_f["Lote"].str.contains(pesquisa, case=False, na=False)
+        df_f["Produto"].astype(str).str.contains(pesquisa, case=False, na=False)
+        | df_f["Codigo_Barras"]
+        .astype(str)
+        .str.contains(pesquisa, case=False, na=False)
+        | df_f["Lote"].astype(str).str.contains(pesquisa, case=False, na=False)
     ]
 
-
   def estilo_alerta(row):
-    val = row.get("Validade", hoje_str)
+    val = str(row.get("Validade", hoje_str))
     if row["Quantidade"] <= row["Limite_Minimo"] or val <= hoje_str:
       return [
           "color: red; font-weight: bold; background-color: #ffe6e6;"
       ] * len(row)
     return [""] * len(row)
-
 
   st.dataframe(
       df_f.style.apply(estilo_alerta, axis=1), use_container_width=True
@@ -703,10 +960,13 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
       "## ➕ Entradas, Saídas, Leitura por Câmara & Controlo FIFO (Lotes)"
   )
 
-  if not permissoes_atuais["pode_movimentar"]:
+  if not permissoes_atuais.get("pode_movimentar", True):
     st.error("Sem permissão para movimentar stock.")
   else:
-    if st.session_state.perfil == "Administrador":
+    if (
+        st.session_state.perfil == "Administrador"
+        and permissoes_atuais.get("pode_cadastrar", True)
+    ):
       with st.container(border=True):
         cadastrar_novo_manual = st.checkbox(
             "➕ [Admin] Adicionar Novo Produto / Lote ao Catálogo"
@@ -732,7 +992,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
             m_setor = st.selectbox(
                 "Setor de Armazenamento", st.session_state.setores
             )
-            m_min = st.number_input("Limite Mínimo", min_value=1, value=10)
+            m_min = st.number_input("Limite Mínimo", min_value=0, value=10)
 
           col_d1, col_d2 = st.columns(2)
           with col_d1:
@@ -745,35 +1005,58 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
             )
 
           if st.button("Guardar Novo Produto / Lote"):
-            if m_nome and m_cod:
-              nova_l = pd.DataFrame({
-                  "Codigo_Barras": [m_cod],
-                  "Produto": [m_nome],
-                  "Descricao": [m_desc],
-                  "Unidades_Embalagem": [m_emb],
-                  "Tipo_Item": [m_tipo],
-                  "Setor": [m_setor],
-                  "Quantidade": [0],
-                  "Limite_Minimo": [m_min],
-                  "Lote": [m_lote],
-                  "Fabricacao": [str(m_fab)],
-                  "Validade": [str(m_val)],
-                  "Ultima_Modificacao": [
-                      datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-                  ],
-                  "Modificado_Por": [st.session_state.username],
-              })
-              st.session_state.estoque = pd.concat(
-                  [st.session_state.estoque, nova_l], ignore_index=True
+            nome_limpo = m_nome.strip()
+            cod_limpo = m_cod.strip()
+            lote_limpo = m_lote.strip()
+            if not nome_limpo or not cod_limpo or not lote_limpo:
+              st.error(
+                  "⚠️ Preencha Nome do Produto, Código de Barras e Número do"
+                  " Lote."
               )
-              salvar_estoque()
-              st.success(
-                  f"Produto e Lote '{m_lote}' registados com sucesso no setor"
-                  f" '{m_setor}'!"
+            elif m_val < m_fab:
+              st.error(
+                  "⚠️ A data de validade não pode ser anterior à data de"
+                  " fabricação."
               )
-              st.rerun()
             else:
-              st.error("Preencha o nome e o código de barras.")
+              recarregar_estoque_fresco()
+              df_est = st.session_state.estoque
+              duplicado = (
+                  (df_est["Codigo_Barras"].astype(str).str.strip() == cod_limpo)
+                  & (df_est["Lote"].astype(str).str.strip() == lote_limpo)
+              ).any()
+              if duplicado:
+                st.error(
+                    f"⚠️ Já existe o código '{cod_limpo}' com o lote"
+                    f" '{lote_limpo}'."
+                )
+              else:
+                nova_l = pd.DataFrame({
+                    "Codigo_Barras": [cod_limpo],
+                    "Produto": [nome_limpo],
+                    "Descricao": [m_desc.strip()],
+                    "Unidades_Embalagem": [int(m_emb)],
+                    "Tipo_Item": [m_tipo],
+                    "Setor": [m_setor],
+                    "Quantidade": [0],
+                    "Limite_Minimo": [int(m_min)],
+                    "Lote": [lote_limpo],
+                    "Fabricacao": [str(m_fab)],
+                    "Validade": [str(m_val)],
+                    "Ultima_Modificacao": [
+                        datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                    ],
+                    "Modificado_Por": [st.session_state.username],
+                })
+                st.session_state.estoque = pd.concat(
+                    [df_est, nova_l], ignore_index=True
+                )
+                salvar_estoque()
+                st.success(
+                    f"Produto e Lote '{lote_limpo}' registados com sucesso no"
+                    f" setor '{m_setor}'!"
+                )
+                st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
     with st.container(border=True):
@@ -803,9 +1086,10 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
       produto_selecionado = None
 
       if modo_mov == "Selecionar na Lista":
-        produto_selecionado = st.selectbox(
-            "Produto", df["Produto"].tolist(), key="sel_mov_l"
-        )
+        if not df.empty:
+          produto_selecionado = st.selectbox(
+              "Produto", df["Produto"].tolist(), key="sel_mov_l"
+          )
       elif modo_mov == "📷 Leitor Ótico com Câmara Traseira (Tempo Real)":
         st.markdown(
             "💡 Clique abaixo para abrir a câmara traseira. Ao apontar para"
@@ -857,7 +1141,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
 
         cod_lido = st.session_state.get("codigo_lido_ativo", "")
         if cod_lido:
-          match = df[df["Codigo_Barras"] == cod_lido.strip()]
+          match = df[df["Codigo_Barras"].astype(str).str.strip() == cod_lido.strip()]
           if not match.empty:
             produto_selecionado = match.iloc[0]["Produto"]
             st.success(
@@ -869,9 +1153,9 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
       else:
         bc = st.text_input(
             "Digite o Código de Barras", placeholder="Ex: 789101..."
-        )
+        ).strip()
         if bc:
-          match = df[df["Codigo_Barras"] == bc]
+          match = df[df["Codigo_Barras"].astype(str).str.strip() == bc]
           if not match.empty:
             produto_selecionado = match.iloc[0]["Produto"]
             st.success(
@@ -883,6 +1167,9 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
 
       if produto_selecionado:
         st.markdown("---")
+        idx_ref = df[df["Produto"] == produto_selecionado].index[0]
+        lote_atual_prod = str(df.loc[idx_ref, "Lote"])
+
         tipo_op = st.radio(
             "Operação",
             ["Recebimento (Entrada)", "Baixa (Saída)"],
@@ -895,7 +1182,7 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
               "Quantidade a Movimentar", min_value=1, value=1, key="qtd_mov_val"
           )
         with col_q2:
-          novo_lote_mov = st.text_input("Nº do Lote", value="LOT-2026-X")
+          novo_lote_mov = st.text_input("Nº do Lote", value=lote_atual_prod)
         with col_q3:
           data_fab_mov = st.date_input(
               "Fabricação", datetime.date.today(), key="fab_mov_dt"
@@ -905,50 +1192,71 @@ elif menu == "➕ Entradas / Saídas (Expedição)":
           )
 
         if st.button("🚀 Confirmar e Registar Movimento", type="primary"):
-          idx = df[df["Produto"] == produto_selecionado].index[0]
-          setor_reg = df.loc[idx, "Setor"]
-          data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-
-          if "Recebimento" in tipo_op:
-            df.loc[idx, "Quantidade"] += qtd_op
-            df.loc[idx, "Lote"] = novo_lote_mov
-            df.loc[idx, "Fabricacao"] = str(data_fab_mov)
-            df.loc[idx, "Validade"] = str(data_val_mov)
-            acao = "Recebimento"
+          if not novo_lote_mov.strip():
+            st.error("⚠️ Informe o número do lote.")
+          elif "Recebimento" in tipo_op and data_val_mov < data_fab_mov:
+            st.error(
+                "⚠️ A data de validade não pode ser anterior à data de"
+                " fabricação."
+            )
           else:
-            if df.loc[idx, "Quantidade"] >= qtd_op:
-              df.loc[idx, "Quantidade"] -= qtd_op
-              acao = "Expedição"
-            else:
-              st.error("⚠️ Stock insuficiente para realizar esta retirada!")
+            recarregar_estoque_fresco()
+            df_est = st.session_state.estoque
+            match_idx = df_est[df_est["Produto"] == produto_selecionado].index
+            if len(match_idx) == 0:
+              st.error("⚠️ Produto não encontrado ao atualizar o stock.")
               st.stop()
 
-          df.loc[idx, "Ultima_Modificacao"] = data_atual
-          df.loc[idx, "Modificado_Por"] = st.session_state.username
+            idx = match_idx[0]
+            setor_reg = df_est.loc[idx, "Setor"]
+            data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            lote_limpo = novo_lote_mov.strip()
 
-          nova_hist = pd.DataFrame(
-              [[
-                  data_atual,
-                  st.session_state.username,
-                  f"{acao} (Setor {setor_reg} - Lote {novo_lote_mov})",
-                  produto_selecionado,
-                  qtd_op,
-              ]],
-              columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"],
-          )
-          st.session_state.historico = pd.concat(
-              [st.session_state.historico, nova_hist], ignore_index=True
-          )
+            if "Recebimento" in tipo_op:
+              df_est.loc[idx, "Quantidade"] = int(df_est.loc[idx, "Quantidade"]) + int(qtd_op)
+              df_est.loc[idx, "Lote"] = lote_limpo
+              df_est.loc[idx, "Fabricacao"] = str(data_fab_mov)
+              df_est.loc[idx, "Validade"] = str(data_val_mov)
+              acao = "Recebimento"
+            else:
+              saldo_atual = int(df_est.loc[idx, "Quantidade"])
+              if saldo_atual >= int(qtd_op):
+                df_est.loc[idx, "Quantidade"] = saldo_atual - int(qtd_op)
+                acao = "Expedição"
+              else:
+                st.error(
+                    f"⚠️ Stock insuficiente! Disponível: {saldo_atual} un,"
+                    f" Solicitado: {int(qtd_op)} un."
+                )
+                st.stop()
 
-          salvar_estoque()
-          salvar_historico()
+            df_est.loc[idx, "Ultima_Modificacao"] = data_atual
+            df_est.loc[idx, "Modificado_Por"] = st.session_state.username
 
-          st.success(
-              f"Operação de {acao} registada com sucesso no setor"
-              f" **{setor_reg}**!"
-          )
-          if "codigo_lido_ativo" in st.session_state:
-            del st.session_state["codigo_lido_ativo"]
+            nova_hist = pd.DataFrame(
+                [[
+                    data_atual,
+                    st.session_state.username,
+                    f"{acao} (Setor {setor_reg} - Lote {lote_limpo})",
+                    produto_selecionado,
+                    int(qtd_op),
+                ]],
+                columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"],
+            )
+            st.session_state.historico = pd.concat(
+                [st.session_state.historico, nova_hist], ignore_index=True
+            )
+
+            salvar_estoque()
+            salvar_historico()
+
+            st.success(
+                f"Operação de {acao} registada com sucesso no setor"
+                f" **{setor_reg}**!"
+            )
+            if "codigo_lido_ativo" in st.session_state:
+              del st.session_state["codigo_lido_ativo"]
+            st.rerun()
 
 
 # --- 3.1 GERAR ETIQUETAS DE CÓDIGOS DE BARRAS ---
@@ -966,7 +1274,7 @@ elif menu == "🏷️ Gerar Etiquetas (Lotes)":
         "Selecione o Produto para Etiqueta", df["Produto"].tolist()
     )
     qtd_etiquetas = st.number_input(
-        "Número de Cópias de Etiquetas", min_value=1, value=5
+        "Número de Cópias de Etiquetas", min_value=1, max_value=100, value=5
     )
 
     row_prod = df[df["Produto"] == prod_etq].iloc[0]
@@ -1036,7 +1344,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       st.markdown("---")
       st.info(
           "⚡ **Atalho de Importação:** Clique no botão abaixo para carregar"
-          " automaticamente todos os 22 itens do talão da Neriah[span_0](start_span)[span_0](end_span)."
+          " automaticamente todos os 22 itens do talão da Neriah."
       )
       if st.button(
           "⚡ [Importação Automática] Carregar Itens do Talão da Neriah",
@@ -1085,7 +1393,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
 
       c_p1, c_p2 = st.columns([2, 1])
       with c_p1:
-        if modo_add_ped == "Selecionar do Stock":
+        if modo_add_ped == "Selecionar do Stock" and not df.empty:
           item_sel = st.selectbox(
               "Produto do Stock", df["Produto"].tolist(), key="sel_item_ped"
           )
@@ -1102,16 +1410,22 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
       if st.button("➕ Adicionar Item à Lista do Pedido"):
         if item_sel and str(item_sel).strip():
           st.session_state.temp_itens.append(
-              {"produto": str(item_sel).strip(), "qtd": qtd_sel}
+              {"produto": str(item_sel).strip(), "qtd": int(qtd_sel)}
           )
-          st.success(f"Adicionado: {item_sel} ({qtd_sel} un)")
+          st.success(f"Adicionado: {item_sel} ({int(qtd_sel)} un)")
         else:
           st.error("Informe o nome do produto.")
 
       if st.session_state.temp_itens:
         st.markdown("#### **Itens Adicionados no Pedido Atual:**")
-        for it in st.session_state.temp_itens:
-          st.write(f"- {it['produto']}: **{it['qtd']} un**")
+        for idx_t, it in enumerate(st.session_state.temp_itens):
+          col_t1, col_t2 = st.columns([4, 1])
+          with col_t1:
+            st.write(f"- {it['produto']}: **{it['qtd']} un**")
+          with col_t2:
+            if st.button("✖", key=f"rm_temp_{idx_t}"):
+              st.session_state.temp_itens.pop(idx_t)
+              st.rerun()
 
         st.markdown("<br>", unsafe_allow_html=True)
         if st.button(
@@ -1127,7 +1441,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                 "itens": [
                     {
                         "produto": i["produto"],
-                        "qtd_pedida": i["qtd"],
+                        "qtd_pedida": int(i["qtd"]),
                         "qtd_separada": 0,
                     }
                     for i in st.session_state.temp_itens
@@ -1150,32 +1464,45 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
     else:
 
       def executar_baixa_pedido(pid_alvo, dados_pedido):
+        if dados_pedido.get("concluido"):
+          return True
+        recarregar_estoque_fresco()
+        df_est = st.session_state.estoque
         erro_stk = False
         itens_para_abater = []
+
         for item in dados_pedido["itens"]:
           p_n = item["produto"]
-          q_s = item["qtd_pedida"]
-          match_stk = df[df["Produto"] == p_n]
-          if not match_stk.empty:
+          q_s = int(item["qtd_pedida"])
+          match_stk = df_est[df_est["Produto"] == p_n]
+          if match_stk.empty:
+            erro_stk = True
+            st.error(
+                f"⚠️ Produto '{p_n}' não encontrado no stock para dar baixa."
+            )
+          else:
             r_idx = match_stk.index[0]
-            if df.loc[r_idx, "Quantidade"] >= q_s:
+            saldo = int(df_est.loc[r_idx, "Quantidade"])
+            if saldo >= q_s:
               itens_para_abater.append(
-                  (r_idx, p_n, q_s, df.loc[r_idx, "Setor"])
+                  (r_idx, p_n, q_s, df_est.loc[r_idx, "Setor"])
               )
             else:
               erro_stk = True
               st.error(
                   f"⚠️ Stock insuficiente para **{p_n}** no setor"
-                  f" {df.loc[r_idx, 'Setor']} (Disponível:"
-                  f" {df.loc[r_idx, 'Quantidade']}, Pedido: {q_s})!"
+                  f" {df_est.loc[r_idx, 'Setor']} (Disponível: {saldo},"
+                  f" Pedido: {q_s})!"
               )
 
         if not erro_stk:
           data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
           for r_idx, p_n, q_s, setor_prod in itens_para_abater:
-            df.loc[r_idx, "Quantidade"] -= q_s
-            df.loc[r_idx, "Ultima_Modificacao"] = data_atual
-            df.loc[r_idx, "Modificado_Por"] = st.session_state.username
+            df_est.loc[r_idx, "Quantidade"] = (
+                int(df_est.loc[r_idx, "Quantidade"]) - q_s
+            )
+            df_est.loc[r_idx, "Ultima_Modificacao"] = data_atual
+            df_est.loc[r_idx, "Modificado_Por"] = st.session_state.username
 
             nova_hist = pd.DataFrame(
                 [[
@@ -1210,6 +1537,7 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
             f" (Criado em: {data_criacao})",
             expanded=not pdata["concluido"],
         ):
+          modo_baixa = "Manual (confirmar por botão no final)"
           if not pdata["concluido"]:
             modo_baixa = st.radio(
                 "⚙️ Modo de Baixa no Stock:",
@@ -1225,9 +1553,11 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
                 f"🔍 Código de Barras / Leitor ({pid})",
                 key=f"input_sep_codigo_{pid}",
                 placeholder="Passe o leitor ou digite...",
-            )
+            ).strip()
             if scan_codigo:
-              match_bar = df[df["Codigo_Barras"] == scan_codigo.strip()]
+              match_bar = df[
+                  df["Codigo_Barras"].astype(str).str.strip() == scan_codigo
+              ]
               if not match_bar.empty:
                 nome_prod_encontrado = match_bar.iloc[0]["Produto"]
                 setor_encontrado = match_bar.iloc[0]["Setor"]
@@ -1259,8 +1589,8 @@ elif menu == "📋 Gestão de Pedidos & Check-list":
           todos_ok = True
           for i_idx, item in enumerate(pdata["itens"]):
             p_name = item["produto"]
-            m_qtd = item["qtd_pedida"]
-            a_qtd = item["qtd_separada"]
+            m_qtd = int(item["qtd_pedida"])
+            a_qtd = int(item["qtd_separada"])
 
             match_stk = df[df["Produto"] == p_name]
             setor_item = (
@@ -1342,25 +1672,32 @@ elif menu == "👥 Gestão de Clientes & Pedidos":
   with tab_cli1:
     with st.container(border=True):
       st.subheader("➕ Registar Novo Cliente")
-      c_razao = st.text_input("Razão Social")
-      c_fantasia = st.text_input("Nome Fantasia")
-      c_cnpj = st.text_input("CNPJ", placeholder="00.000.000/0001-00")
-      c_end = st.text_area("Endereço Completo")
-      c_cont = st.text_input("Contacto (Telefone / E-mail)")
+      c_razao = st.text_input("Razão Social").strip()
+      c_fantasia = st.text_input("Nome Fantasia").strip()
+      c_cnpj = st.text_input("CNPJ", placeholder="00.000.000/0001-00").strip()
+      c_end = st.text_area("Endereço Completo").strip()
+      c_cont = st.text_input("Contacto (Telefone / E-mail)").strip()
 
       if st.button("💾 Guardar Novo Cliente", type="primary"):
         if c_razao and c_cnpj:
-          novo_c = {
-              "razao_social": c_razao,
-              "nome_fantasia": c_fantasia if c_fantasia else c_razao,
-              "cnpj": c_cnpj,
-              "endereco": c_end,
-              "contacto": c_cont,
-          }
-          st.session_state.clientes.append(novo_c)
-          salvar_clientes()
-          st.success(f"Cliente '{c_razao}' registado com sucesso!")
-          st.rerun()
+          cnpj_existente = any(
+              str(c.get("cnpj", "")).strip() == c_cnpj
+              for c in st.session_state.clientes
+          )
+          if cnpj_existente:
+            st.error("⚠️ Já existe um cliente registado com este CNPJ.")
+          else:
+            novo_c = {
+                "razao_social": c_razao,
+                "nome_fantasia": c_fantasia if c_fantasia else c_razao,
+                "cnpj": c_cnpj,
+                "endereco": c_end,
+                "contacto": c_cont,
+            }
+            st.session_state.clientes.append(novo_c)
+            salvar_clientes()
+            st.success(f"Cliente '{c_razao}' registado com sucesso!")
+            st.rerun()
         else:
           st.error("Preencha a Razão Social e o CNPJ.")
 
@@ -1393,6 +1730,8 @@ elif menu == "👥 Gestão de Clientes & Pedidos":
       st.subheader("📦 Registar Pedido para Cliente")
       if not st.session_state.clientes:
         st.warning("⚠️ Cadastre um cliente primeiro.")
+      elif df.empty:
+        st.warning("⚠️ Cadastre um produto no stock primeiro.")
       else:
         lista_nomes_clientes = [
             c["razao_social"] for c in st.session_state.clientes
@@ -1420,9 +1759,9 @@ elif menu == "👥 Gestão de Clientes & Pedidos":
 
         if st.button("➕ Adicionar Item ao Pedido do Cliente"):
           st.session_state.itens_cli_temp.append(
-              {"produto": prod_escolhido, "quantidade": qtd_escolhida}
+              {"produto": prod_escolhido, "quantidade": int(qtd_escolhida)}
           )
-          st.success(f"Adicionado: {prod_escolhido} ({qtd_escolhida} un)")
+          st.success(f"Adicionado: {prod_escolhido} ({int(qtd_escolhida)} un)")
 
         if st.session_state.itens_cli_temp:
           st.markdown("**Itens no Pedido:**")
@@ -1481,13 +1820,13 @@ elif menu == "👥 Gestão de Clientes & Pedidos":
         mes_atual_str = datetime.date.today().strftime("%Y-%m")
         filtro_mes = st.text_input(
             "Filtrar por Mês e Ano (AAAA-MM)", value=mes_atual_str
-        )
+        ).strip()
 
         pedidos_filtrados = [
             p
             for p in st.session_state.clientes_pedidos
             if p["cliente"] == filtro_cli_rel
-            and p.get("mes_ano", p["data"][:7]) == filtro_mes
+            and p.get("mes_ano", str(p["data"])[:7]) == filtro_mes
         ]
 
         st.markdown(
@@ -1511,7 +1850,7 @@ elif menu == "👥 Gestão de Clientes & Pedidos":
           df_rel = pd.DataFrame(dados_tabela)
           st.dataframe(df_rel, use_container_width=True)
 
-          csv_rel = df_rel.to_csv(index=False).encode("utf-8")
+          csv_rel = df_rel.to_csv(index=False).encode("utf-8-sig")
           st.download_button(
               label=(
                   f"📥 Descarregar Relatório de {filtro_cli_rel}"
@@ -1531,12 +1870,7 @@ elif menu == "👥 Gestão de Clientes & Pedidos":
 elif menu.startswith("💬 Mensagens"):
   st.markdown("## 💬 Central de Mensagens & Bate-Papo Interno")
 
-  def carregar_mensagens_disco():
-    if os.path.exists(ARQ_MENSAGENS):
-      with open(ARQ_MENSAGENS, "r", encoding="utf-8") as f:
-        st.session_state.mensagens = json.load(f)
-
-  carregar_mensagens_disco()
+  recarregar_mensagens_frescas()
 
   utilizadores_disponiveis = [
       u
@@ -1555,7 +1889,7 @@ elif menu.startswith("💬 Mensagens"):
     st.markdown(f"### 💬 Conversa com: **{destinatario}**")
 
     def renderizar_conversa(user_atual, outro_user):
-      carregar_mensagens_disco()
+      recarregar_mensagens_frescas()
 
       alterado = False
       for m in st.session_state.mensagens:
@@ -1591,34 +1925,35 @@ elif menu.startswith("💬 Mensagens"):
 
             if remetente == user_atual:
               st.markdown(
-                  f"<div style='text-align: right; background-color: #d1e7dd; padding: 10px; border-radius: 10px; margin: 5px 0; margin-left: 20%;'>"
+                  f"<div style='text-align: right; background-color: #d1e7dd; color: #111; padding: 10px; border-radius: 10px; margin: 5px 0; margin-left: 20%;'>"
                   f"<small><b>Você</b> — {data_envio}</small><br>{texto}</div>",
                   unsafe_allow_html=True,
               )
               if ficheiro_info:
                 st.markdown(
                     f"<div style='text-align: right;'><a"
-                    f" href='data:file/txt;base64,{ficheiro_info['dados']}'"
+                    f" href='data:application/octet-stream;base64,{ficheiro_info['dados']}'"
                     f" download='{ficheiro_info['nome']}'>📎 Ficheiro"
                     f" Anexado: {ficheiro_info['nome']}</a></div>",
                     unsafe_allow_html=True,
                 )
             else:
               st.markdown(
-                  f"<div style='text-align: left; background-color: #f8d7da; padding: 10px; border-radius: 10px; margin: 5px 0; margin-right: 20%;'>"
+                  f"<div style='text-align: left; background-color: #f8d7da; color: #111; padding: 10px; border-radius: 10px; margin: 5px 0; margin-right: 20%;'>"
                   f"<small><b>{remetente}</b> — {data_envio}</small><br>{texto}</div>",
                   unsafe_allow_html=True,
               )
               if ficheiro_info:
                 st.markdown(
                     f"<div style='text-align: left;'><a"
-                    f" href='data:file/txt;base64,{ficheiro_info['dados']}'"
+                    f" href='data:application/octet-stream;base64,{ficheiro_info['dados']}'"
                     f" download='{ficheiro_info['nome']}'>📎 Ficheiro"
                     f" Anexado: {ficheiro_info['nome']}</a></div>",
                     unsafe_allow_html=True,
                 )
 
     if hasattr(st, "fragment"):
+
       @st.fragment(run_every="3s")
       def chat_ao_vivo():
         renderizar_conversa(st.session_state.username, destinatario)
@@ -1641,20 +1976,20 @@ elif menu.startswith("💬 Mensagens"):
 
       if btn_enviar:
         if texto_msg.strip() or anexo_arquivo:
-          import base64
-
           d_arquivo = None
           if anexo_arquivo is not None:
             bytes_arq = anexo_arquivo.read()
             b64_arq = base64.b64encode(bytes_arq).decode("utf-8")
             d_arquivo = {"nome": anexo_arquivo.name, "dados": b64_arq}
 
-          carregar_mensagens_disco()
+          recarregar_mensagens_frescas()
 
           nova_msg = {
               "de": st.session_state.username,
               "para": destinatario,
-              "texto": texto_msg if texto_msg else "[Ficheiro Anexado]",
+              "texto": (
+                  texto_msg.strip() if texto_msg.strip() else "[Ficheiro Anexado]"
+              ),
               "data": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
               "lida": False,
               "ficheiro": d_arquivo,
@@ -1665,6 +2000,8 @@ elif menu.startswith("💬 Mensagens"):
           st.rerun()
         else:
           st.error("Escreva uma mensagem ou anexe um ficheiro.")
+
+
 # --- 7. RELATÓRIOS & ROMANEIOS ---
 elif menu == "📊 Romaneios & Relatórios":
   st.markdown("## 📊 Romaneios & Relatórios por Período")
@@ -1760,7 +2097,6 @@ elif menu == "📊 Romaneios & Relatórios":
       st.subheader("📋 Pré-visualização Organizada do Romaneio")
       st.dataframe(df_relatorio, use_container_width=True)
 
-      # Monta tabela HTML limpa e formatada para impressão / guardar como PDF
       linhas_html = ""
       for _, linha in df_relatorio.iterrows():
         celulas = "".join(
