@@ -902,11 +902,59 @@ elif menu == "⚙️ Configuração":
 # --- 2. CONSULTAR STOCK & KPIs ---
 elif menu == "🍲 Consultar Stock & Setores":
   st.markdown("## 🍲 Consulta de Stock, Lotes & Indicadores (KPIs)")
-if st.session_state.perfil == "Administrador":
+
+  hoje_str = datetime.date.today().strftime("%Y-%m-%d")
+  total_skus = len(df)
+  total_qtd = int(df["Quantidade"].sum()) if not df.empty else 0
+  criticos = (
+      len(df[df["Quantidade"] <= df["Limite_Minimo"]]) if not df.empty else 0
+  )
+  vencidos = (
+      len(df[df["Validade"].astype(str) <= hoje_str]) if not df.empty else 0
+  )
+
+  k1, k2, k3, k4 = st.columns(4)
+  k1.metric("📦 Total de Produtos (SKUs)", total_skus)
+  k2.metric("📊 Quantidade Total em Stock", total_qtd)
+  k3.metric("⚠️ Abaixo do Mínimo", criticos, delta_color="inverse")
+  k4.metric("🚨 Lotes Vencidos / Vencendo", vencidos, delta_color="inverse")
+
+  st.markdown("---")
+
+  setor_filtro = st.selectbox(
+      "Filtrar por Setor", ["Todos os Setores"] + st.session_state.setores
+  )
+  pesquisa = st.text_input(
+      "🔍 Pesquisar por Produto, Lote ou Código de Barras", ""
+  )
+
+  df_f = df.copy()
+  if setor_filtro != "Todos os Setores":
+    df_f = df_f[df_f["Setor"] == setor_filtro]
+  if pesquisa:
+    df_f = df_f[
+        df_f["Produto"].astype(str).str.contains(pesquisa, case=False, na=False)
+        | df_f["Codigo_Barras"]
+        .astype(str)
+        .str.contains(pesquisa, case=False, na=False)
+        | df_f["Lote"].astype(str).str.contains(pesquisa, case=False, na=False)
+    ]
+
+  def estilo_alerta(row):
+    val = str(row.get("Validade", hoje_str))
+    if row["Quantidade"] <= row["Limite_Minimo"] or val <= hoje_str:
+      return [
+          "color: red; font-weight: bold; background-color: #ffe6e6;"
+      ] * len(row)
+    return [""] * len(row)
+
+  st.dataframe(
+      df_f.style.apply(estilo_alerta, axis=1), use_container_width=True
+  )
+
+  if st.session_state.perfil == "Administrador" and not df_f.empty:
     st.markdown("---")
-    st.subheader(
-        "✏️ Ajuste Direto de Quantidade (Exclusivo Administrador)"
-    )
+    st.subheader("✏️ Ajuste Direto de Quantidade (Exclusivo Administrador)")
     st.caption(
         "Altere apenas o valor da coluna **Quantidade** diretamente na"
         " tabela abaixo e clique em **Salvar Quantidades**."
@@ -987,60 +1035,10 @@ if st.session_state.perfil == "Administrador":
       if alteracoes > 0:
         salvar_estoque()
         salvar_historico()
-        st.success(
-            f"✅ {alteracoes} quantidade(s) atualizada(s) com sucesso!"
-        )
+        st.success(f"✅ {alteracoes} quantidade(s) atualizada(s) com sucesso!")
         st.rerun()
       else:
         st.info("Nenhuma alteração de quantidade foi feita.")
-  hoje_str = datetime.date.today().strftime("%Y-%m-%d")
-  total_skus = len(df)
-  total_qtd = int(df["Quantidade"].sum()) if not df.empty else 0
-  criticos = (
-      len(df[df["Quantidade"] <= df["Limite_Minimo"]]) if not df.empty else 0
-  )
-  vencidos = (
-      len(df[df["Validade"].astype(str) <= hoje_str]) if not df.empty else 0
-  )
-
-  k1, k2, k3, k4 = st.columns(4)
-  k1.metric("📦 Total de Produtos (SKUs)", total_skus)
-  k2.metric("📊 Quantidade Total em Stock", total_qtd)
-  k3.metric("⚠️ Abaixo do Mínimo", criticos, delta_color="inverse")
-  k4.metric("🚨 Lotes Vencidos / Vencendo", vencidos, delta_color="inverse")
-
-  st.markdown("---")
-
-  setor_filtro = st.selectbox(
-      "Filtrar por Setor", ["Todos os Setores"] + st.session_state.setores
-  )
-  pesquisa = st.text_input(
-      "🔍 Pesquisar por Produto, Lote ou Código de Barras", ""
-  )
-
-  df_f = df.copy()
-  if setor_filtro != "Todos os Setores":
-    df_f = df_f[df_f["Setor"] == setor_filtro]
-  if pesquisa:
-    df_f = df_f[
-        df_f["Produto"].astype(str).str.contains(pesquisa, case=False, na=False)
-        | df_f["Codigo_Barras"]
-        .astype(str)
-        .str.contains(pesquisa, case=False, na=False)
-        | df_f["Lote"].astype(str).str.contains(pesquisa, case=False, na=False)
-    ]
-
-  def estilo_alerta(row):
-    val = str(row.get("Validade", hoje_str))
-    if row["Quantidade"] <= row["Limite_Minimo"] or val <= hoje_str:
-      return [
-          "color: red; font-weight: bold; background-color: #ffe6e6;"
-      ] * len(row)
-    return [""] * len(row)
-
-  st.dataframe(
-      df_f.style.apply(estilo_alerta, axis=1), use_container_width=True
-  )
 
 
 # --- 3. ENTRADAS E SAÍDAS ---
