@@ -902,7 +902,97 @@ elif menu == "⚙️ Configuração":
 # --- 2. CONSULTAR STOCK & KPIs ---
 elif menu == "🍲 Consultar Stock & Setores":
   st.markdown("## 🍲 Consulta de Stock, Lotes & Indicadores (KPIs)")
+if st.session_state.perfil == "Administrador":
+    st.markdown("---")
+    st.subheader(
+        "✏️ Ajuste Direto de Quantidade (Exclusivo Administrador)"
+    )
+    st.caption(
+        "Altere apenas o valor da coluna **Quantidade** diretamente na"
+        " tabela abaixo e clique em **Salvar Quantidades**."
+    )
 
+    df_edit_base = df_f.copy()
+    colunas_editor = [
+        c
+        for c in [
+            "Codigo_Barras",
+            "Produto",
+            "Setor",
+            "Lote",
+            "Quantidade",
+            "Limite_Minimo",
+            "Validade",
+        ]
+        if c in df_edit_base.columns
+    ]
+
+    df_editado = st.data_editor(
+        df_edit_base[colunas_editor],
+        use_container_width=True,
+        hide_index=True,
+        key="editor_qtd_admin",
+        disabled=[c for c in colunas_editor if c != "Quantidade"],
+    )
+
+    if st.button("💾 Salvar Quantidades", type="primary"):
+      recarregar_estoque_fresco()
+      df_est = st.session_state.estoque
+      data_atual = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+      alteracoes = 0
+
+      for _, linha_ed in df_editado.iterrows():
+        nova_qtd = int(
+            pd.to_numeric(linha_ed["Quantidade"], errors="coerce") or 0
+        )
+        if nova_qtd < 0:
+          nova_qtd = 0
+
+        mask = (
+            df_est["Codigo_Barras"].astype(str).str.strip()
+            == str(linha_ed["Codigo_Barras"]).strip()
+        ) & (
+            df_est["Produto"].astype(str).str.strip()
+            == str(linha_ed["Produto"]).strip()
+        )
+        if "Lote" in df_est.columns and "Lote" in linha_ed:
+          mask = mask & (
+              df_est["Lote"].astype(str).str.strip()
+              == str(linha_ed["Lote"]).strip()
+          )
+
+        if mask.any():
+          idx_alvo = df_est[mask].index[0]
+          qtd_anterior = int(df_est.loc[idx_alvo, "Quantidade"])
+          if nova_qtd != qtd_anterior:
+            df_est.loc[idx_alvo, "Quantidade"] = nova_qtd
+            df_est.loc[idx_alvo, "Ultima_Modificacao"] = data_atual
+            df_est.loc[idx_alvo, "Modificado_Por"] = st.session_state.username
+            alteracoes += 1
+
+            nova_hist = pd.DataFrame(
+                [[
+                    data_atual,
+                    st.session_state.username,
+                    f"Ajuste Direto Qtd ({qtd_anterior} -> {nova_qtd})",
+                    df_est.loc[idx_alvo, "Produto"],
+                    abs(nova_qtd - qtd_anterior),
+                ]],
+                columns=["Data", "Utilizador", "Acao", "Item", "Quantidade"],
+            )
+            st.session_state.historico = pd.concat(
+                [st.session_state.historico, nova_hist], ignore_index=True
+            )
+
+      if alteracoes > 0:
+        salvar_estoque()
+        salvar_historico()
+        st.success(
+            f"✅ {alteracoes} quantidade(s) atualizada(s) com sucesso!"
+        )
+        st.rerun()
+      else:
+        st.info("Nenhuma alteração de quantidade foi feita.")
   hoje_str = datetime.date.today().strftime("%Y-%m-%d")
   total_skus = len(df)
   total_qtd = int(df["Quantidade"].sum()) if not df.empty else 0
